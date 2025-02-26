@@ -12,12 +12,16 @@ import org.bukkit.command.TabCompleter
 import org.bukkit.entity.Player
 import org.bukkit.plugin.java.JavaPlugin
 import prd.peurandel.prdcore.ItemStack.ItemSerialization
+import prd.peurandel.prdcore.Manager.ConfigManager
+import prd.peurandel.prdcore.Manager.MessageConfigManager
 
 class PRDCommand(private val plugin: JavaPlugin,database: MongoDatabase) : CommandExecutor, TabCompleter {
 
     val ServerCollection = database.getCollection("server")
     val ItemDoc = ServerCollection.find(Filters.eq("name","item")).first() as Document
     val TypeKeys = listOf("material", "engines", "skills", "techs", "softwares", "magics", "orbital")
+    private lateinit var configManager: ConfigManager
+    private lateinit var messageConfigManager: MessageConfigManager // MessageConfigManager 인스턴스
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<String>): Boolean {
         if (sender !is Player) {
@@ -42,6 +46,15 @@ class PRDCommand(private val plugin: JavaPlugin,database: MongoDatabase) : Comma
                     "set" -> handleItemSet(player, args)
                     else -> player.sendMessage("알 수 없는 서브 명령어: ${args[1]}")
                 }
+            }
+            "reload" -> {
+                if (sender == player) {
+                    sender.sendMessage("알 수 없는 명령어거나 권한이 없습니다.")
+                    return true
+                }
+                reloadPluginConfigs()
+                sender.sendMessage(messageConfigManager.getMessage("config_reloaded"))
+                return true
             }
             else -> player.sendMessage("알 수 없는 명령어: ${args[0]}")
         }
@@ -155,5 +168,23 @@ class PRDCommand(private val plugin: JavaPlugin,database: MongoDatabase) : Comma
             null
         }
     }
+
+    fun reloadPluginConfigs() { // 설정 파일들 (config.yml, messages.yml) 모두 리로드하는 메서드 (필요한 경우)
+        configManager.reloadConfig()
+        messageConfigManager.reloadConfig()
+        loadPluginSettings() // 설정 다시 로드 후 적용
+        plugin.logger.info("플러그인 설정 파일들을 다시 로드했습니다.")
+    }
+
+    private fun loadPluginSettings() {
+    }
+
+    fun getPluginConfig(): ConfigManager { // ConfigManager 인스턴스 반환 메서드 (필요한 경우)
+        return configManager
+    }
+    fun getMessageConfig(): MessageConfigManager { // MessageConfigManager 인스턴스 반환 메서드 (필요한 경우)
+        return messageConfigManager
+    }
+
 
 }

@@ -5,10 +5,12 @@ import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 
-class ConfigManager(private val plugin: Plugin, private val configFileName: String) {
+class MessageConfigManager(private val plugin: Plugin, private val configFileName: String) { // 클래스 이름 변경: ConfigManager -> MessageConfigManager
 
     private lateinit var config: YamlConfiguration
     private val configFile: File = File(plugin.dataFolder, configFileName)
+
+    // ... (init, loadConfig, createDefaultConfig 함수는 이전 ConfigManager 와 동일) ...
 
     init {
         loadConfig()
@@ -43,52 +45,34 @@ class ConfigManager(private val plugin: Plugin, private val configFileName: Stri
         }
     }
 
-    /**
-     * 설정 값 가져오기 (String)
-     * @param path 설정 경로 (config.yml 에서의 경로)
-     * @param default 기본값 (설정 파일에 없을 경우 반환)
-     * @return 설정 값 (String), 설정이 없으면 기본값
-     */
-    fun getString(path: String, default: String): String {
-        return config.getString(path, default) ?: default // null safe, 엘비스 연산자 활용
-    }
 
     /**
-     * 설정 값 가져오기 (Int)
-     * @param path 설정 경로
-     * @param default 기본값
-     * @return 설정 값 (Int), 설정이 없으면 기본값
+     * 메시지 가져오기 (플레이스홀더 치환 및 컬러 코드 적용)
+     * @param key 메시지 키 (messages.yml 에서의 경로)
+     * @param placeholders 플레이스홀더 (Pair<플레이스홀더 이름, 값>...)
+     * @return 최종 메시지 (컬러 코드 적용 완료)
      */
-    fun getInt(path: String, default: Int): Int {
-        return config.getInt(path, default)
+    fun getMessage(key: String, vararg placeholders: Pair<String, String>): String { // 함수 이름 변경 (의미 명확하게)
+        var message = config.getString(key, "&c[메시지 오류] $key") ?: "&c[메시지 오류] $key" // 메시지 키가 없을 경우 기본 메시지
+        val prefix = config.getString("prefix", "") ?: "" // prefix 가져오기, 없으면 빈 문자열
+        message = prefix + message // 접두사 추가
+
+        for ((placeholder, value) in placeholders) {
+            message = message.replace("{$placeholder}", value) // 플레이스홀더 치환
+        }
+
+        return colorize(message) // 컬러 코드 적용 함수 (아래에 정의)
     }
 
-    /**
-     * 설정 값 가져오기 (Boolean)
-     * @param path 설정 경로
-     * @param default 기본값
-     * @return 설정 값 (Boolean), 설정이 없으면 기본값
-     */
-    fun getBoolean(path: String, default: Boolean): Boolean {
-        return config.getBoolean(path, default)
+    // 컬러 코드 적용 함수 (Bukkit API 활용) - 이전과 동일
+    private fun colorize(message: String): String {
+        return org.bukkit.ChatColor.translateAlternateColorCodes('&', message)
     }
-
-    /**
-     * 설정 값 가져오기 (List<String>)
-     * @param path 설정 경로
-     * @param default 기본값 (빈 리스트)
-     * @return 설정 값 (List<String>), 설정이 없으면 기본값 (빈 리스트)
-     */
-    fun getStringList(path: String, default: List<String> = emptyList()): List<String> {
-        return config.getStringList(path) ?: default // null safe, 엘비스 연산자 활용
-    }
-
-    // 필요에 따라 다른 타입 (Double, Long, ConfigurationSection 등) 가져오는 메서드 추가 가능
 
     /**
      * 설정 파일 다시 로드
      */
-    fun reloadConfig() {
+    fun reloadConfig() { // 함수 이름 유지 (reloadConfig)
         loadConfig()
         plugin.logger.info("$configFileName 파일을 다시 로드했습니다.")
     }

@@ -25,8 +25,15 @@ class Main : JavaPlugin() {
         ignoreUnknownKeys = true
         coerceInputValues = true
     }
+    private lateinit var configManager: ConfigManager
+    private lateinit var messageConfigManager: MessageConfigManager // MessageConfigManager 인스턴스
 
     override fun onEnable() {
+        configManager = ConfigManager(this, "config.yml") // config.yml 파일 로드
+        loadPluginSettings()
+
+
+
 
         mongoDBManager = MongoDBManager("mongodb://localhost:27017")
         if (mongoDBManager == null) logger.info("연결 자체에 문제 있음")
@@ -159,4 +166,16 @@ class Main : JavaPlugin() {
 
         }
     }
+
+    private fun loadPluginSettings() {
+    }
+
+    fun getPluginConfig(): ConfigManager { // ConfigManager 인스턴스 반환 메서드 (필요한 경우)
+        return configManager
+    }
+    fun getMessageConfig(): MessageConfigManager { // MessageConfigManager 인스턴스 반환 메서드 (필요한 경우)
+        return messageConfigManager
+    }
+
+
 }

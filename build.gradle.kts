@@ -9,7 +9,6 @@ plugins {
 }
 
 group = "prd.peurandel"
-version = "0.1.2"
 
 repositories {
     mavenCentral()
