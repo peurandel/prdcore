@@ -1,0 +1,21 @@
+name: prdcore
+version: '0.1.2'
+main: prd.peurandel.prdcore.Main
+api-version: '1.21'
+commands:
+  suit:
+    description: Opens the Suit GUI or performs other suit-related actions
+    usage: /<command> [on|off|wardrobe]
+    aliases:
+      - suit
+    permission: prd.commands.suit
+    permission-message: You don't have permission to use this command.
+  ai:
+    description: Use GPT
+    usage: /<command> [Prompt]
+  prd:
+    description: PRD Plugin management command for admins
+    usage: /prd <action>
+    permission: prd.commands.prd
+libraries:
+  - org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0
