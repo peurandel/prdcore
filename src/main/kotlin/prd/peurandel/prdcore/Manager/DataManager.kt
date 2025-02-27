@@ -2,12 +2,15 @@ package prd.peurandel.prdcore.Manager
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonIgnoreUnknownKeys
+import org.bson.codecs.pojo.annotations.BsonId
+import org.bson.types.ObjectId
 
 @Serializable
 data class Changable(val height: Boolean)
 
 @Serializable
 data class Armor(val armor: Int, val cost: Int, val duration: Int, val weight: Int)
+
 
 @Serializable
 data class Skill(
@@ -65,4 +68,83 @@ data class User(
     val wardrobepage: Int,
     val research_point: Int,
     val research: Research
+)
+
+
+//연구
+@Serializable
+data class ResearchEngine(
+    val name: String = "Engine",
+    val engine: MutableList<Engine>
+
+)
+@Serializable
+data class Engine(
+    val name: String,
+    val id: String,
+    val lore: List<String>,
+    val tier: Byte,
+    val energy: Int,
+    val requireEx: Int,
+    val requireResearch: String?
+    )
+@Serializable
+data class ResearchArmor(
+    val name: String = "Armor",
+    val armor: MutableList<ArmorType>
+)
+
+@Serializable
+data class ArmorType(
+    val name: String,
+    val id: String,
+    val lore: List<String>,
+    val armor: Int,
+    val weight: Int,
+    val cost: Int,
+    val duration: Int,
+    val requireEx: Int
+    )
+@Serializable
+data class ResearchMaterial(
+
+    val name: String = "Material",
+    val material: MutableList<Material>
+
+)
+@Serializable
+data class Material(
+    val name: String,
+    val id: String,
+    val lore: List<String>,
+    val armor: Int,
+    val weight: Double,
+    val cost: Int,
+    val duration: Int,
+    val requireEx: Int
+)
+@Serializable
+data class ResearchSkills(
+    val name: String = "Skills",
+    val skills: MutableList<Skills>
+)
+@Serializable
+data class Skills(
+    val name: String,
+    val id: String,
+    val lore: List<String>,
+    val requireEx: Int,
+)
+@Serializable
+data class ResearchMagic(
+    val name: String = "Magics",
+    val magics: MutableList<Magics>
+)
+
+@Serializable
+data class Magics(
+    val name: String,
+    val id: String,
+    val lore: List<String>,
+    val requireEx: Int,
 )

@@ -3,6 +3,8 @@ package prd.peurandel.prdcore
 import com.mongodb.client.MongoDatabase
 import com.mongodb.client.model.Filters
 import kotlinx.serialization.json.Json
+import org.bson.Document
+import org.bson.types.ObjectId
 import org.bukkit.Bukkit
 import org.bukkit.NamespacedKey
 import org.bukkit.entity.Player
@@ -16,6 +18,7 @@ import prd.peurandel.prdcore.Gui.*
 import prd.peurandel.prdcore.Handler.PlayerHandler
 import prd.peurandel.prdcore.Manager.*
 import java.util.*
+import java.util.logging.Logger
 
 
 class Main : JavaPlugin() {
@@ -28,6 +31,8 @@ class Main : JavaPlugin() {
     private lateinit var configManager: ConfigManager
     private lateinit var messageConfigManager: MessageConfigManager // MessageConfigManager 인스턴스
 
+    private lateinit var logger: Logger
+
     override fun onEnable() {
         configManager = ConfigManager(this, "config.yml") // config.yml 파일 로드
         loadPluginSettings()
@@ -36,9 +41,15 @@ class Main : JavaPlugin() {
 
 
         mongoDBManager = MongoDBManager("mongodb://localhost:27017")
-        if (mongoDBManager == null) logger.info("연결 자체에 문제 있음")
         val database = mongoDBManager.connectToDataBase("server")
-        if (database == null) logger.info("데타베이스에 문제 있음")
+
+        logger.info("플러그인이 활성화되었습니다.")
+
+        //Keep the comments in front the code when the Docs are already created
+        createDocsForTest(database)
+
+
+
         // 이벤트 리스너 등록
         val inventoryClickHandler = InventoryClickHandler()
         server.pluginManager.registerEvents(inventoryClickHandler, this)
@@ -57,14 +68,6 @@ class Main : JavaPlugin() {
             setTabCompleter(SuitTabCompleter())
         }
         getCommand("prd")?.setExecutor(PRDCommand(this,database  ))
-
-        //Bukkit.getPluginCommand("suit")!!.apply{
-        //    setExecutor(SuitCommand(this@Main,database))
-        //    setTabCompleter(SuitTabCompleter())
-        //}
-        //Bukkit.getPluginCommand("prd")?.setExecutor(PRDCommand(this,database))
-        //Bukkit.getPluginCommand("ai")?.apply{
-        //}
 
         startPlayerTask(this,database)
 
@@ -177,5 +180,105 @@ class Main : JavaPlugin() {
         return messageConfigManager
     }
 
+    fun createDocsForTest(database: MongoDatabase) {
+
+        val serverCollection = database.getCollection("server")
+        val Engine = ResearchEngine(
+            name = "Engine",
+            engine = mutableListOf(
+                Engine(
+                    name = "Basic Furnace",
+                    id = "basic_furnace",
+                    lore = listOf(
+                        "원시의 기운이 느껴집니다."
+                    ),
+                    tier = 1,
+                    energy = 1000,
+                    requireEx = 0,
+                    requireResearch = null
+                )
+            )
+        )
+        val Armor = ResearchArmor(
+            name = "ArmorType",
+            armor = mutableListOf(
+                ArmorType(
+                    name = "주조장갑",
+                    id = "Cast Armor",
+                    lore = listOf(
+                        "기본적인 장갑입니다.",
+                        "값싸고 든든합니다.",
+                    ),
+                    armor = 0,
+                    weight = 0,
+                    duration = -10,
+                    cost = -20,
+                    requireEx = 0,
+
+                    )
+            )
+        )
+        val Material = ResearchMaterial(
+            name = "Material",
+            material = mutableListOf(
+                Material(
+                    name = "강철",
+                    id = "steel",
+                    lore = listOf(
+                        "기본적인 장갑 재질입니다."
+                    ),
+                    weight = 4.87,
+                    armor = 15,
+                    cost = 3,
+                    duration = 840,
+                    requireEx = 0
+                )
+            )
+        )
+
+        val Magic = ResearchMagic(
+            name = "Magic",
+            magics = mutableListOf(
+                Magics(
+                    name = "보호막",
+                    id = "shield",
+                    lore = listOf(
+                        "장갑을 보호하는 보호막입니다."
+                    ),
+                    requireEx = 0
+                )
+            )
+        )
+
+        val Skills = ResearchSkills(
+            name = "Skill",
+            skills = mutableListOf(
+                Skills(
+                    name = "테스트",
+                    id = "steel",
+                    lore = listOf(
+                        "일단 존나 테스트"
+                    ),
+                    requireEx = 0
+                )
+            )
+        )
+
+        val EngineDoc = Document.parse(Json.encodeToString(Engine))
+        val ArmorDoc = Document.parse(Json.encodeToString(Armor))
+        val MaterialDoc = Document.parse(Json.encodeToString(Material))
+        val MagicDoc = Document.parse(Json.encodeToString(Magic))
+        val SkillDoc = Document.parse(Json.encodeToString(Skills))
+
+        val simpleDoc = Document.parse("""{"test": "document"}""")
+        val result = serverCollection.insertOne(simpleDoc)
+
+        logger.info("Inserted document ID: ${result.insertedId}")
+        serverCollection.insertOne(EngineDoc)
+        serverCollection.insertOne(ArmorDoc)
+        serverCollection.insertOne(MaterialDoc)
+        serverCollection.insertOne(MagicDoc)
+        serverCollection.insertOne(SkillDoc)
+    }
 
 }
