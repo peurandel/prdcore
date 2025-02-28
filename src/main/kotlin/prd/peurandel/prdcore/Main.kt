@@ -9,6 +9,7 @@ import org.bukkit.Bukkit
 import org.bukkit.NamespacedKey
 import org.bukkit.entity.Player
 import org.bukkit.persistence.PersistentDataType
+
 import org.bukkit.plugin.java.JavaPlugin
 import prd.peurandel.prdcore.Commands.PRDCommand
 import prd.peurandel.prdcore.Commands.SuitCommand
