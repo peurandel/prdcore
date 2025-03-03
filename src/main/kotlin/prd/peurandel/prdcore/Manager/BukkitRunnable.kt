@@ -203,8 +203,8 @@ class BukkitRunnable(plugin: JavaPlugin,database: MongoDatabase) : BukkitRunnabl
         val propulsion: Double = (suit["propulsion"] ?: 2000.0) as Double
         val armorDoc = suit["armor"] as Document
         val armorWeight = armorDoc["weight"] as Int
-        val height = map["height"] as Int
-        val weight = (height.toDouble() / 100) * (height.toDouble() / 100) * 25
+        //val height = map["height"] as Int
+        val weight = (180.0 / 100) * (180.0 / 100) * 25
         val suitWeight = ((suit["weight"] as Double) * 4.8)*(1.0+armorWeight/100)
         return propulsion/((suitWeight + weight)*20)
     }

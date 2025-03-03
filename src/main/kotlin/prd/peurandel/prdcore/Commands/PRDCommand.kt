@@ -12,14 +12,11 @@ import org.bukkit.command.TabCompleter
 import org.bukkit.entity.Player
 import org.bukkit.plugin.java.JavaPlugin
 import prd.peurandel.prdcore.ItemStack.ItemSerialization
-import prd.peurandel.prdcore.Manager.ConfigManager
-import prd.peurandel.prdcore.Manager.MessageConfigManager
+import prd.peurandel.prdcore.Manager.*
 
 class PRDCommand(private val plugin: JavaPlugin,database: MongoDatabase) : CommandExecutor, TabCompleter {
 
     val ServerCollection = database.getCollection("server")
-    val ItemDoc = ServerCollection.find(Filters.eq("name","item")).first() as Document
-    val TypeKeys = listOf("material", "engines", "skills", "techs", "softwares", "magics", "orbital")
     private lateinit var configManager: ConfigManager
     private lateinit var messageConfigManager: MessageConfigManager // MessageConfigManager 인스턴스
 
@@ -52,7 +49,7 @@ class PRDCommand(private val plugin: JavaPlugin,database: MongoDatabase) : Comma
                     sender.sendMessage("알 수 없는 명령어거나 권한이 없습니다.")
                     return true
                 }
-                reloadPluginConfigs()
+                //reloadPluginConfigs()
                 sender.sendMessage(messageConfigManager.getMessage("config_reloaded"))
                 return true
             }
@@ -65,116 +62,126 @@ class PRDCommand(private val plugin: JavaPlugin,database: MongoDatabase) : Comma
 
     override fun onTabComplete(sender: CommandSender, command: Command, alias: String, args: Array<String>): List<String>? {
         return when (args.size) {
-            1 -> listOf("item").filter { it.startsWith(args[0], true) }
+            1 -> listOf("item","reload").filter { it.startsWith(args[0], true) }
             2 -> tabCompleterArgsSize2(args)
-            3 -> tabCompleterArgsSize3(args)
-            4 -> tabCompleterArgsSize4(args)
+            //3 -> tabCompleterArgsSize3(args)
+            //4 -> tabCompleterArgsSize4(args)
+            else -> null
+        }
+    }
+    fun tabCompleterArgsSize2(args: Array<String>): List<String>? {
+        return when(args[1]) {
+            "item" -> listOf("set","get")
             else -> null
         }
     }
 
-    private fun tabCompleterArgsSize2(args: Array<String>): List<String>? {
-        return when (args[0]) {
-            "item" -> listOf("get", "set").filter { it.startsWith(args[1], true) }
-            else -> null
-        }
-    }
 
-    private fun tabCompleterArgsSize3(args: Array<String>): List<String>? {
-        val materialKeys = getItemTypeKeys()
-        return when (args[0]) {
-            "item" -> when (args[1]) {
-                "get","set" -> materialKeys.filter { it.startsWith(args[2],true)}
-                else -> null
-            }
-            else -> null
-        }
-    }
-    private fun tabCompleterArgsSize4(args: Array<String>): List<String>? {
-        return when (args[0]) {
-            "item" -> when (args[1]) {
-                "get","set" -> if(args[2] in TypeKeys) getItemKeys(args[2]) else null
-                else -> null
-            }
-            else -> null
-        }
-    }
 
-    fun getItemTypeKeys(): List<String> {
-        return ItemDoc["list"] as List<String>
-    }
-    fun getItemKeys(type: String): List<String> {
-        val TypeDoc = ItemDoc[type] as Document
 
-        return TypeDoc.keys.toList()
-    }
     private fun handleItemGet(player: Player, args: Array<String>) {
-        val TypeDoc = getTypeDoc(player, args) ?: return
-        if(args.size == 3) {
-            val itemList = TypeDoc.keys.joinToString(", ")
-            player.sendMessage("[$args[2]] 타입의 아이템 목록: $itemList")
-        } else if(args.size == 4){
-            val valueDoc = getValueDoc(player,TypeDoc,args[3]) as Document
 
-            if(valueDoc["item"] != null) {
-                player.inventory.addItem(ItemSerialization.deserializeItemStack(valueDoc["item"].toString()))
-                player.sendMessage("${ChatColor.GREEN}[PRD] ${ChatColor.WHITE}성공적으로 ${args[2]}의 ${args[3]} 아이템을 가져왔습니다!")
+        //args : 0 = item, 1 = get 2 = type
+        val type = getType(args[2],args[3]) ?: player.sendMessage("${ChatColor.RED}[!] 그런거 없음") as String
+        player.inventory.addItem(ItemSerialization.deserializeItemStack(type))
+        player.sendMessage("${ChatColor.GREEN}[PRD] ${ChatColor.WHITE}성공적으로 ${args[2]}의 ${args[3]} 아이템을 가져왔습니다!")
+    }
 
-            } else {
-                player.sendMessage("${ChatColor.GREEN}[PRD] ${ChatColor.WHITE}그런 아이템 없음")
+    fun getType(type: String,name: String) : String? {
+        return when(type) {
+            "engine" -> ResearchEngine.create(ServerCollection).engine.find{ it.name == name}?.item
+            "armor" -> ResearchArmor.create(ServerCollection).armor.find{ it.name == name}?.item
+            "material" -> ResearchMaterial.create(ServerCollection).material.find{ it.name == name}?.item
+            "skills" -> (ResearchSkills.create(ServerCollection) as ResearchSkills).skills.find{ it.name == name}?.item
+            "magics" -> (ResearchMagic.create(ServerCollection) as ResearchMagic).magics.find{ it.name == name}?.item
+            else -> null
+        }
+    }
+
+
+    fun getTypeIndex(type:String,id: String): Int? {
+        when(type) {
+            "engine" -> {
+                val List = (ResearchEngine.create(ServerCollection) as ResearchEngine).engine
+                for(i in List.indices) {
+                    if(List[i].id ==id) {
+                        return i
+                    }
+                    return null
+                }
             }
+            "armor" -> {
+                val List = ResearchArmor.create(ServerCollection).armor
+                for(i in List.indices) {
+                    if(List[i].id ==id) {
+                        return i
+                    }
+                    return null
+                }
+            }
+            "material" -> {
+                val List = ResearchMaterial.create(ServerCollection).material
+                for(i in List.indices) {
+                    if(List[i].id ==id) {
+                        return i
+                    }
+                    return null
+                }
+            }
+            "skills" -> {
+                val List = (ResearchSkills.create(ServerCollection) as ResearchSkills).skills
+                for(i in List.indices) {
+                    if(List[i].id ==id) {
+                        return i
+                    }
+                    return null
+                }
+            }
+
+            "magics" -> {
+                val List = (ResearchMagic.create(ServerCollection) as ResearchMagic).magics
+                for(i in List.indices) {
+                    if(List[i].id ==id) {
+                        return i
+                    }
+                    return null
+                }
+            }
+        }
+        return null
+    }
+    fun getTypeName(type:String): String? {
+        return when(type) {
+            "engine" -> "Engine"
+            "armor" -> "ArmorType"
+            "material" -> "Material"
+            "skills" -> "Skill"
+            "magics" -> "Magic"
+            else -> null
         }
     }
 
     private fun handleItemSet(player: Player, args: Array<String>) {
-        val TypeDoc = getTypeDoc(player, args) ?: return
-        if(args.size == 3) {
-            val itemList = TypeDoc.keys.joinToString(", ")
-            player.sendMessage("[$args[2]] 타입의 아이템 목록: $itemList")
-        } else if(args.size == 4){
-            val handItem: String = ItemSerialization.serializeItemStack(player.inventory.itemInMainHand)
 
-            ServerCollection.updateOne(
-                Filters.eq<String>("name", "item"),
-                Updates.combine(
-                    Updates.set("${args[2]}.${args[3]}.item",handItem)
-                )
+        //args : 0 = item, 1 = get 2 = type
+        val typeName = getTypeName(args[2])
+        if(typeName == null) {
+            player.sendMessage("잘못된 타입 이름")
+            return
+        }
+        val handItem: String = ItemSerialization.serializeItemStack(player.inventory.itemInMainHand)
+
+        player.sendMessage("발겨한 인덱스 : ${getTypeIndex(args[2],args[3])}")
+        ServerCollection.updateOne(
+            Filters.eq<String>("name", typeName),
+            Updates.combine(
+                Updates.set("${args[2]}.${getTypeIndex(args[2],args[3])}.item",handItem)
             )
-            player.sendMessage("${ChatColor.GREEN}[PRD] ${ChatColor.WHITE}성공적으로 ${args[2]}의 ${args[3]}의 아이템으로 업데이트했습니다.")
-        }
+        )
+        player.sendMessage("${ChatColor.GREEN}[PRD] ${ChatColor.WHITE}성공적으로 ${args[2]}의 ${args[3]}의 아이템으로 업데이트했습니다.")
+
     }
 
-    private fun getTypeDoc(player: Player, args: Array<String>): Document? {
-
-        if (args.size < 3 || args[2] !in TypeKeys) {
-            player.sendMessage("올바르지 않은 타입입니다. 사용 가능한 타입: ${TypeKeys.joinToString(", ")}")
-            return null
-        }
-
-        val TypeDoc = ItemDoc[args[2]] as? Document
-        if (TypeDoc == null) {
-            player.sendMessage("해당 타입의 아이템 데이터가 존재하지 않습니다: ${args[2]}")
-        }
-
-        return TypeDoc
-    }
-
-    private fun getValueDoc(player: Player, TypeDoc: Document,args: String): Document? {
-
-        return if(TypeDoc[args] !=null) {
-            TypeDoc[args] as Document
-        } else {
-            player.sendMessage("그딴 값 없음 ㅋㅋ")
-            null
-        }
-    }
-
-    fun reloadPluginConfigs() { // 설정 파일들 (config.yml, messages.yml) 모두 리로드하는 메서드 (필요한 경우)
-        configManager.reloadConfig()
-        messageConfigManager.reloadConfig()
-        loadPluginSettings() // 설정 다시 로드 후 적용
-        plugin.logger.info("플러그인 설정 파일들을 다시 로드했습니다.")
-    }
 
     private fun loadPluginSettings() {
     }

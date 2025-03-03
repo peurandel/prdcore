@@ -32,14 +32,11 @@ class Main : JavaPlugin() {
     private lateinit var configManager: ConfigManager
     private lateinit var messageConfigManager: MessageConfigManager // MessageConfigManager 인스턴스
 
-    private lateinit var logger: Logger
+    private var logger: Logger = getLogger()
 
     override fun onEnable() {
         configManager = ConfigManager(this, "config.yml") // config.yml 파일 로드
         loadPluginSettings()
-
-
-
 
         mongoDBManager = MongoDBManager("mongodb://localhost:27017")
         val database = mongoDBManager.connectToDataBase("server")
@@ -47,9 +44,7 @@ class Main : JavaPlugin() {
         logger.info("플러그인이 활성화되었습니다.")
 
         //Keep the comments in front the code when the Docs are already created
-        createDocsForTest(database)
-
-
+        //createDocsForTest(database)
 
         // 이벤트 리스너 등록
         val inventoryClickHandler = InventoryClickHandler()
@@ -68,7 +63,10 @@ class Main : JavaPlugin() {
             setExecutor(SuitCommand(this@Main,database))
             setTabCompleter(SuitTabCompleter())
         }
-        getCommand("prd")?.setExecutor(PRDCommand(this,database  ))
+        getCommand("prd")?.apply {
+            setExecutor(PRDCommand(this@Main,database ))
+            setTabCompleter(PRDCommand(this@Main,database))
+        }
 
         startPlayerTask(this,database)
 
@@ -196,6 +194,7 @@ class Main : JavaPlugin() {
                     tier = 1,
                     energy = 1000,
                     requireEx = 0,
+                    item = "asdf",
                     requireResearch = null
                 )
             )
@@ -214,6 +213,7 @@ class Main : JavaPlugin() {
                     weight = 0,
                     duration = -10,
                     cost = -20,
+                    item = "asdf",
                     requireEx = 0,
 
                     )
@@ -232,6 +232,7 @@ class Main : JavaPlugin() {
                     armor = 15,
                     cost = 3,
                     duration = 840,
+                    item = "asdf",
                     requireEx = 0
                 )
             )
@@ -246,6 +247,7 @@ class Main : JavaPlugin() {
                     lore = listOf(
                         "장갑을 보호하는 보호막입니다."
                     ),
+                    item = "asdf",
                     requireEx = 0
                 )
             )
@@ -260,6 +262,7 @@ class Main : JavaPlugin() {
                     lore = listOf(
                         "일단 존나 테스트"
                     ),
+                    item = "asdf",
                     requireEx = 0
                 )
             )

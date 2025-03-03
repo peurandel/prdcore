@@ -1,4 +1,3 @@
-
 plugins {
     `java-library`
     kotlin("jvm") version "2.1.10"
@@ -45,4 +44,10 @@ tasks.processResources {
     filesMatching("paper-plugin.yml") {
         expand(props)
     }
+}
+
+// tasks.jar -> tasks.shadowJar 로 변경
+tasks.shadowJar {
+    archiveFileName.set("prdcore.jar") // 최종적으로 plugins 폴더에 생성될 파일 이름
+    destinationDirectory.set(file("D:\\Project\\server\\1.21.4\\plugins")) // plugins 폴더 경로
 }

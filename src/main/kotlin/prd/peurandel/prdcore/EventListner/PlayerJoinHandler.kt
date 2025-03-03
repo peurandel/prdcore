@@ -108,8 +108,10 @@ class PlayerJoinHandler(database: MongoDatabase,plugin: JavaPlugin): Listener {
             money = 10000,
             wardrobepage = 0,
             research = Research(
-                engine = listOf("furnace"),
-                armor = listOf("Homogenous Rolled Armor")
+                engine = listOf("basic_furnace"),
+                armor = listOf("cast_armor"),
+                magic = emptyList(),
+                skill = emptyList()
             ),
             research_point = 0
         )
