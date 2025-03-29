@@ -27,7 +27,6 @@ class ModuleArmorGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Stri
     val playerCollection = database.getCollection("users")
     val serverCollection = database.getCollection("server")
     val suitManager = SuitManager(plugin, database)
-    val armorType: ResearchArmor = ResearchArmor.create(serverCollection)
     val material: ResearchMaterial = ResearchMaterial.create(serverCollection)
 
     override fun initializeItems(plugin: JavaPlugin, player: String) {
@@ -41,21 +40,20 @@ class ModuleArmorGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Stri
     }
 
     fun fillInventory(player: String) {
-        val playerDoc: Document = playerCollection.find(Filters.eq("name",player)).first()
+        val user = Json.decodeFromString<User>(playerCollection.find(Filters.eq("name",player)).first().toJson())
 
-        val researchDoc = playerDoc["research"] as Document
-        val researchList: List<String> = researchDoc["armor"] as List<String>
+        val researchList: List<ArmorType> = user.research.armor
         for(i in 0..53) {
             val index = i % 4 + 4 * (i / 9).toInt()
             if(i % 9 == 4) {
                 inventory.setItem(i, ItemStack(Material.GRAY_STAINED_GLASS_PANE))
             } else if((i % 9) < 4 && index < researchList.size) {
-                inventory.setItem(i, getArmorItem(playerDoc, researchList, index))
+                inventory.setItem(i, getArmorItem(user, researchList, index))
             } else {
                 inventory.setItem(i, ItemStack(Material.LIGHT_GRAY_STAINED_GLASS_PANE))
             }
         }
-        inventory.setItem(5, getMaterialItem(playerDoc,"steel"))
+        inventory.setItem(5, getMaterialItem(user,"steel"))
         /*
         inventory.setItem(6, getMaterialItem(playerDoc,"copper"))
         inventory.setItem(7, getMaterialItem(playerDoc,"kevlar"))
@@ -77,11 +75,11 @@ class ModuleArmorGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Stri
         if(isVaildSlot(event,rawSlot)) {
             val item = event.currentItem
             val buttonName = item?.let { ButtonName(it) }
-            val playerDoc: Document = playerCollection.find(Filters.eq("name",player.name)).first()
+            val user = Json.decodeFromString<User>(playerCollection.find(Filters.eq("name",player.name)).first().toJson())
 
 
-            if(item?.let { isArmorProccess(it) } == true) SelectArmorItem(event,player,item,playerDoc)
-            if(item?.let { isMaterialProccess(it) } == true) SelectMaterialItem(event,player,item,playerDoc)
+            if(item?.let { isArmorProccess(it) } == true) SelectArmorItem(event,player,item,user)
+            if(item?.let { isMaterialProccess(it) } == true) SelectMaterialItem(event,player,item,user)
 
             if (buttonName != null){
                 processButton(event,event.whoClicked as Player,buttonName)
@@ -130,9 +128,9 @@ class ModuleArmorGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Stri
         return event.inventory.getItem(49)
     }
 
-    fun getMaterialItem(playerDoc: Document,id: String): ItemStack {
+    fun getMaterialItem(user: User,id: String): ItemStack {
 
-        val materialSet = material.material.find {it.id == id} as prd.peurandel.prdcore.Manager.Material
+        val materialSet = material.material.find {it.type == id} as prd.peurandel.prdcore.Manager.Material
         val item = materialSet.item
         val itemStack = if (item!=null)ItemSerialization.deserializeItemStack(item) else ItemStack(Material.BARRIER)
         val meta = itemStack.itemMeta
@@ -141,8 +139,9 @@ class ModuleArmorGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Stri
         val processkey = NamespacedKey(plugin,"process")
         meta.persistentDataContainer.set(key, PersistentDataType.STRING,materialSet.name)
         meta.persistentDataContainer.set(processkey, PersistentDataType.STRING,"material")
+        val wardrobe = user.wardrobe.find { it.uuid == suitUUID } as WardrobeItem
 
-        if(isSelected(playerDoc,materialSet.name,"material")) {
+        if(wardrobe.material == materialSet.name) {
             meta.addEnchant(Enchantment.UNBREAKING, 1, true)
         }
 
@@ -151,10 +150,10 @@ class ModuleArmorGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Stri
 
         return itemStack
     }
-    fun getArmorItem(playerDoc:Document, researchList: List<String>,i: Int): ItemStack {
+    fun getArmorItem(user:User, researchList: List<ArmorType>,i: Int): ItemStack {
 
         val index = i%9 + (i/9)
-        val armor = armorType.armor.find {it.name == researchList.get(index) } as ArmorType
+        val armor = researchList.get(index)
 
         val armorName = armor.name
 
@@ -168,25 +167,16 @@ class ModuleArmorGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Stri
 
         val key = NamespacedKey(plugin,"armor")
         val processkey = NamespacedKey(plugin,"process")
-        meta.persistentDataContainer.set(key, PersistentDataType.STRING,researchList.get(index))
+        meta.persistentDataContainer.set(key, PersistentDataType.STRING,armor.type)
         meta.persistentDataContainer.set(processkey, PersistentDataType.STRING,"armor")
+        val wardrobe = user.wardrobe.find { it.uuid == suitUUID } as WardrobeItem
 
-        if(isSelected(playerDoc,researchList.get(index),"armorName")) {
+        if(wardrobe.armorName == armor.type) {
             meta.addEnchant(Enchantment.UNBREAKING, 1, true)
         }
 
         item.itemMeta = meta
         return item
-    }
-    fun isSelected(playerDoc: Document, Name: String,type: String): Boolean {
-        val wardrobes = playerDoc["wardrobe"] as? List<Document> ?: return false
-
-        for (wardrobeSet in wardrobes) {
-            if (wardrobeSet.getString("uuid") == suitUUID) {
-                return wardrobeSet.getString(type) == Name
-            }
-        }
-        return false
     }
 
     fun isArmorProccess(item: ItemStack): Boolean {
@@ -211,15 +201,13 @@ class ModuleArmorGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Stri
         return container.get(key, PersistentDataType.STRING)
     }
 
-    fun SelectMaterialItem(event: InventoryClickEvent, player: Player,item: ItemStack, playerDoc: Document) {
+    fun SelectMaterialItem(event: InventoryClickEvent, player: Player,item: ItemStack, user: User) {
 
         val ItemKey = getKey(item,"material")
         //get WardrobeDoc
-        val wardrobeIndex = suitManager.getWardrobeIndex(playerDoc,getSuitUUID(event))
-        val wardrobeDoc = suitManager.getWardrobe(player.uniqueId.toString(),getSuitUUID(event)) as Document
-        val armor_duration = wardrobeDoc.getInteger("duration")
-        val wardrobeArmorDoc: Document = wardrobeDoc["armor"] as Document
-        val wardrboeArmorWeight = wardrobeArmorDoc.getInteger("weight").toDouble()
+        val wardrobeIndex = suitManager.getWardrobeIndex(user,getSuitUUID(event))
+        val wardrobe = user.wardrobe.find{it.uuid == getSuitUUID(event)} as WardrobeItem
+        val armor_duration = wardrobe.duration as Int
 
 
         // Armor: weight, duration, armor, cost
@@ -243,7 +231,7 @@ class ModuleArmorGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Stri
                 Updates.set("wardrobe.${wardrobeIndex}.max_durability",(duration * 24 * (1.0+ armor_duration/100)).toInt()),
                 Updates.set("wardrobe.${wardrobeIndex}.duration", duration),
                 //Updates.set("wardrobe.${wardrobeIndex}.cost", cost),
-                Updates.set("wardrobe.${wardrobeIndex}.weight", weight*(1.0+wardrboeArmorWeight/100)),
+                Updates.set("wardrobe.${wardrobeIndex}.weight", weight*(1.0+wardrobe.armor!!.weight/100)),
                 //Updates.set("wardrobe.${wardrobeIndex}.armor", Armor)
 
             )
@@ -253,7 +241,7 @@ class ModuleArmorGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Stri
 
 
     }
-    fun SelectArmorItem(event: InventoryClickEvent, player: Player,item: ItemStack, playerDoc: Document) {
+    fun SelectArmorItem(event: InventoryClickEvent, player: Player,item: ItemStack, user: User) {
 
         val ItemKey = getKey(item,"armor")
         // Armor: weight, duration, armor, cost
@@ -262,13 +250,13 @@ class ModuleArmorGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Stri
         // armor = 방어력
         // cost = 가격
         // 이 모든게 비율값임.
-        val armorSet = armorType.armor.find {it.name == ItemKey} as Armor
+        val armorSet = user.research.armor.find {it.type == ItemKey} as ArmorType
         val weight = armorSet.weight
         val duration = armorSet.duration
         val Armor = armorSet.armor
         val cost = armorSet.cost
 
-        val wardrobeIndex = suitManager.getWardrobeIndex(playerDoc,getSuitUUID(event))
+        val wardrobeIndex = suitManager.getWardrobeIndex(user,getSuitUUID(event))
 
         playerCollection.updateOne(
             Filters.eq<String>("name", player.name),

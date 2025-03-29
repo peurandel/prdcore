@@ -13,12 +13,12 @@ import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.persistence.PersistentDataType
 import org.bukkit.plugin.java.JavaPlugin
+import prd.peurandel.prdcore.Main
 import prd.peurandel.prdcore.Manager.*
 import java.util.*
 import kotlin.collections.ArrayList
 
-class PlayerJoinHandler(database: MongoDatabase,plugin: JavaPlugin): Listener {
-    val plugin = plugin
+class PlayerJoinHandler(database: MongoDatabase,private val plugin: Main): Listener {
     val database = database
     val userCollection = database.getCollection("users")
     val suitManager = SuitManager(plugin,database)
@@ -26,13 +26,17 @@ class PlayerJoinHandler(database: MongoDatabase,plugin: JavaPlugin): Listener {
         ignoreUnknownKeys = true
         coerceInputValues = true
     }
-
     @EventHandler
     fun onPlayerJoin(event: PlayerJoinEvent) {
         val player = event.player
 
         if(isExisting(player)) updateUserName(player)
         else createNewUser(player)
+
+
+
+        plugin.sidebarManager.createSidebar(event.player)
+
 
         setMap(player)
         loadSuit(player)
@@ -43,7 +47,10 @@ class PlayerJoinHandler(database: MongoDatabase,plugin: JavaPlugin): Listener {
     fun onPlayerQuit(event: PlayerQuitEvent) {
         val player = event.player
         val dataContainer = player.persistentDataContainer
+
         val key = NamespacedKey(plugin, "suit")
+
+        plugin.sidebarManager.removeSidebar(event.player)
 
         val suit = dataContainer.get(key, PersistentDataType.STRING) ?: return // null일 경우 종료
 
@@ -108,8 +115,32 @@ class PlayerJoinHandler(database: MongoDatabase,plugin: JavaPlugin): Listener {
             money = 10000,
             wardrobepage = 0,
             research = Research(
-                engine = listOf("basic_furnace"),
-                armor = listOf("cast_armor"),
+                engine = listOf(Engine(
+                    name = "Basic Furnace",
+                    type = "basic_furnace",
+                    lore = listOf(
+                        "원시의 기운이 느껴집니다."
+                    ),
+                    tier = 1,
+                    energy = 1000,
+                    requireEx = 0,
+                    item = "asdf",
+                    requireResearch = null
+                )),
+                armor = listOf(ArmorType(
+                    name = "주조장갑",
+                    type = "cast_armor",
+                    lore = listOf(
+                        "기본적인 장갑입니다.",
+                        "값싸고 든든합니다.",
+                    ),
+                    armor = 0,
+                    weight = 0,
+                    duration = -10,
+                    cost = -20,
+                    item = "asdf",
+                    requireEx = 0
+                )),
                 magic = emptyList(),
                 skill = emptyList()
             ),
@@ -136,6 +167,7 @@ class PlayerJoinHandler(database: MongoDatabase,plugin: JavaPlugin): Listener {
     }
     fun loadSuit(player: Player) {
         val key = NamespacedKey(plugin, "suit")
+        val testkey2 = NamespacedKey(plugin, "suit2")
         val dataContainer = player.persistentDataContainer
 
         val suit = dataContainer.get(key, PersistentDataType.STRING) ?: return // null일 경우 종료

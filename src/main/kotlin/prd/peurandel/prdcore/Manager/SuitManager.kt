@@ -32,6 +32,12 @@ class SuitManager(val plugin: JavaPlugin, database: MongoDatabase) {
         val wardrobes = playerDoc.getList("wardrobe", Document::class.java) ?: emptyList()
         return wardrobes.indexOfFirst { it.getString("uuid") == suitUUID }
     }
+
+    fun getWardrobeIndex(user: User, suitUUID: String): Int {
+        val wardrobes = user.wardrobe
+        return wardrobes.indexOfFirst { it.uuid == suitUUID }
+    }
+
     fun loadSuit(playerDoc: Document, suitName: String): Document? {
         val wardrobes = playerDoc.getList("wardrobe", Document::class.java) ?: emptyList()
         return wardrobes.find { it.getString("name") == suitName }
@@ -41,8 +47,13 @@ class SuitManager(val plugin: JavaPlugin, database: MongoDatabase) {
         return wardrobes.find { it.getString("uuid") == suitUUID }
     }
     fun setSuit(player: Player, suitOwnerUuid: String, suitDoc: Document) {
+        val wardrobe: WardrobeItem = json.decodeFromString(suitDoc.toJson())
+
         val key = NamespacedKey(plugin, "suit")
+        val key2 = NamespacedKey(plugin, "suit2")
+
         player.persistentDataContainer.set(key, PersistentDataType.STRING, "$suitOwnerUuid:${suitDoc.getString("uuid")}")
+        player.persistentDataContainer.set(key2, PersistentDataType.STRING, json.encodeToString(wardrobe))
 
         //해쉬 넣기
         val suitData = mutableMapOf<String, Any?>().apply{
@@ -159,8 +170,6 @@ class SuitManager(val plugin: JavaPlugin, database: MongoDatabase) {
         }
     }
     fun wearArmor(player: Player, suitDoc: Document) {
-        val ArmorDoc = suitDoc["armor"] as Document
-
         val armorTypes = listOf("helmet", "chestplate", "leggings", "boots")
         val playerArmor = mapOf(
             "helmet" to player.inventory::setHelmet,

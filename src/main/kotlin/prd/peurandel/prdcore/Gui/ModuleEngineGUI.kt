@@ -25,16 +25,14 @@ class ModuleEngineGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Str
     private val database = database
     private val suitUUID = suitUUID
     val playerCollection = database.getCollection("users")
-    val serverCollection = database.getCollection("server")
-    val engine= ResearchEngine.create(serverCollection)
 
     override fun initializeItems(plugin: JavaPlugin, player: String) {
         val user = Json.decodeFromString<User>(playerCollection.find(Filters.eq("name",player)).first().toJson())
-        val researchList: List<String> = user.research.engine
+        val researchList: List<Engine> = user.research.engine
         for(i  in 0..53) {
             if(i < researchList.size) {
 
-                inventory.setItem(i,getEngineItem(user,researchList,i))
+                inventory.setItem(i,getEngineItem(user,researchList[i]))
 
             } else {
                 inventory.setItem(i, ItemStack(Material.LIGHT_GRAY_STAINED_GLASS_PANE))
@@ -57,10 +55,8 @@ class ModuleEngineGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Str
             val player = event.whoClicked as Player
 
             val user = Json.decodeFromString<User>(playerCollection.find(Filters.eq("name",player.name)).first().toJson())
-            val engine= ResearchEngine.create(serverCollection)
 
-
-            val researchList: List<String> = user.research.engine
+            val researchList: List<Engine> = user.research.engine
             SelectEngine(event,player, user, rawSlot, researchList)
             if (buttonName != null){
                 processButton(event,player,buttonName)
@@ -107,8 +103,7 @@ class ModuleEngineGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Str
     fun getInfoItem(event: InventoryClickEvent): ItemStack? {
         return event.inventory.getItem(49)
     }
-    fun getEngineItem(user: User, researchList: List<String>,i: Int): ItemStack {
-        val engineSet = engine.engine.find {it.id == researchList.get(i) } as Engine
+    fun getEngineItem(user: User, engineSet: Engine): ItemStack {
         val engineName = engineSet.name
 
         val item: ItemStack = ItemSerialization.deserializeItemStack(engineSet.item)
@@ -121,7 +116,7 @@ class ModuleEngineGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Str
         lore.add(ChatColor.AQUA.toString() + "Energy: " + engineSet.energy)
         meta.lore = lore
 
-        if(isSelected(user,engineSet.id)) {
+        if(isSelected(user,engineSet.type)) {
             meta.addEnchant(Enchantment.UNBREAKING, 1, true)
         }
 
@@ -138,12 +133,12 @@ class ModuleEngineGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Str
         return false
     }
 
-    fun SelectEngine(event: InventoryClickEvent, player: Player,user: User,rawSlot: Int,researchList: List<String>) {
+    fun SelectEngine(event: InventoryClickEvent, player: Player,user: User,rawSlot: Int,researchList: List<Engine>) {
         //슈트 이름 인젝션 방지
         if(rawSlot+1 > researchList.size) {
             return
         }
-        val engineSet = engine.engine.find {it.name == researchList.get(rawSlot) } as Engine
+        val engineSet = researchList.get(rawSlot)
 
         for(i in user.wardrobe.indices) {
 
@@ -153,7 +148,7 @@ class ModuleEngineGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: Str
                 playerCollection.updateOne(
                     Filters.eq<String>("name", player.name),
                     Updates.combine(
-                        Updates.set("wardrobe.${suitIndex}.engine",engineSet.name),
+                        Updates.set("wardrobe.${suitIndex}.engine",engineSet.type),
                         Updates.set("wardrobe.${suitIndex}.tier", engineSet.tier),
                         Updates.set("wardrobe.${suitIndex}.max_energy", engineSet.energy)
                     )

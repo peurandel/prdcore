@@ -31,6 +31,7 @@ class Main : JavaPlugin() {
     }
     private lateinit var configManager: ConfigManager
     private lateinit var messageConfigManager: MessageConfigManager // MessageConfigManager 인스턴스
+    lateinit var sidebarManager: SidebarManager
 
     private var logger: Logger = getLogger()
 
@@ -45,6 +46,7 @@ class Main : JavaPlugin() {
 
         //Keep the comments in front the code when the Docs are already created
         //createDocsForTest(database)
+        sidebarManager = SidebarManager(database)
 
         // 이벤트 리스너 등록
         val inventoryClickHandler = InventoryClickHandler()
@@ -52,8 +54,9 @@ class Main : JavaPlugin() {
         server.pluginManager.registerEvents(PlayerJoinHandler(database,this), this)
         server.pluginManager.registerEvents(DamageHandler(), this)
         server.pluginManager.registerEvents(SneakHandler(this,database), this)
-
+        server.pluginManager.registerEvents(playerInteractHandler(), this)
         server.pluginManager.registerEvents(PlayerHandler(), this)
+
 
         setPlayerSet(database)
         // GUI 등록
@@ -187,7 +190,7 @@ class Main : JavaPlugin() {
             engine = mutableListOf(
                 Engine(
                     name = "Basic Furnace",
-                    id = "basic_furnace",
+                    type = "basic_furnace",
                     lore = listOf(
                         "원시의 기운이 느껴집니다."
                     ),
@@ -204,7 +207,7 @@ class Main : JavaPlugin() {
             armor = mutableListOf(
                 ArmorType(
                     name = "주조장갑",
-                    id = "Cast Armor",
+                    type = "cast_armor",
                     lore = listOf(
                         "기본적인 장갑입니다.",
                         "값싸고 든든합니다.",
@@ -214,9 +217,8 @@ class Main : JavaPlugin() {
                     duration = -10,
                     cost = -20,
                     item = "asdf",
-                    requireEx = 0,
-
-                    )
+                    requireEx = 0
+                )
             )
         )
         val Material = ResearchMaterial(
@@ -224,7 +226,7 @@ class Main : JavaPlugin() {
             material = mutableListOf(
                 Material(
                     name = "강철",
-                    id = "steel",
+                    type = "steel",
                     lore = listOf(
                         "기본적인 장갑 재질입니다."
                     ),
@@ -243,7 +245,7 @@ class Main : JavaPlugin() {
             magics = mutableListOf(
                 Magics(
                     name = "보호막",
-                    id = "shield",
+                    type = "shield",
                     lore = listOf(
                         "장갑을 보호하는 보호막입니다."
                     ),
@@ -258,7 +260,7 @@ class Main : JavaPlugin() {
             skills = mutableListOf(
                 Skills(
                     name = "테스트",
-                    id = "steel",
+                    type = "steel",
                     lore = listOf(
                         "일단 존나 테스트"
                     ),

@@ -3,6 +3,7 @@ package prd.peurandel.prdcore.Gui
 import com.mongodb.client.MongoDatabase
 import com.mongodb.client.model.Filters
 import com.mongodb.client.model.Updates
+import kotlinx.serialization.json.Json
 import org.bson.Document
 import org.bukkit.Bukkit
 import org.bukkit.ChatColor
@@ -18,10 +19,15 @@ import org.bukkit.persistence.PersistentDataType
 import org.bukkit.plugin.java.JavaPlugin
 import prd.peurandel.prdcore.ItemStack.Button
 import prd.peurandel.prdcore.ItemStack.ItemSerialization
+import prd.peurandel.prdcore.Manager.Engine
+import prd.peurandel.prdcore.Manager.ResearchEngine
+import prd.peurandel.prdcore.Manager.User
 import java.util.*
 
 class ResearchEngineGUI(plugin: JavaPlugin, private var database: MongoDatabase) : BaseGUI(plugin,"Research Engine",54) {
     val playerCollection = database.getCollection("users")
+    val serverCollection = database.getCollection("server")
+    val engine = Json.decodeFromString<ResearchEngine>(serverCollection.find(Filters.eq("name", "Engine")).first().toJson())
     val slots = intArrayOf(
         0, 9, 18,
         27, 36, 37,
@@ -33,26 +39,15 @@ class ResearchEngineGUI(plugin: JavaPlugin, private var database: MongoDatabase)
         15, 6, 7
     )
     override fun initializeItems(plugin: JavaPlugin, player: String) {
-        val playerDoc: Document = playerCollection.find(Filters.eq("name",player)).first()
-        val playerUUID = Bukkit.getOfflinePlayer(player).player?.uniqueId.toString()
+        val user = Json.decodeFromString<User>(playerCollection.find(Filters.eq("name",player)).first().toJson())
+
         for(i in 0..53) {
             inventory.setItem(i, ItemStack(Material.LIGHT_GRAY_STAINED_GLASS_PANE))
         }
         val item: ItemStack = GUIInfo(Bukkit.getOfflinePlayer(player).player?.uniqueId.toString())
 
-        val itemNames = arrayOf(
-            "furnace", "improved_furnace", "advanced_furnace",
-            "blast_furnace", "improved_blast_furnace", "advanced_blast_furnace",
-            "diesel", "improved_diesel", "advanced_diesel",
-            "basic_zet", "first_zet", "second_zet",
-            "third_zet", "4th_zet", "basic_nuclear",
-            "first_nuclear", "second_nuclear", "third_nuclear",
-            "basic_fushion_reactor", "improved_fushion_reactor", "advanced_fushion_reactor",
-            "first_fushion_reactor", "1_5th_fushion_reactor", "second_fushion_reactor"
-        )
-
-        for (i in itemNames.indices) {
-            inventory.setItem(slots[i], getResearch(playerDoc, itemNames[i]))
+        for (i in engine.engine.indices) {
+            inventory.setItem(slots[i], getResearch(user, i))
         }
 
         inventory.setItem(48, Button().GoBack(plugin,"To Research Menu"))
@@ -76,16 +71,15 @@ class ResearchEngineGUI(plugin: JavaPlugin, private var database: MongoDatabase)
         }
     }
 
-    fun getResearch(playerDoc: Document,name: String): ItemStack{
+    fun getResearch(user: User,i: Int): ItemStack{
 
-        val itemDoc = getItemDocument(name)
-
-        val itemStack: ItemStack = ItemSerialization.deserializeItemStack(itemDoc.getString("item"))
+        val engineSet = engine.engine[i]
+        val itemStack: ItemStack = ItemSerialization.deserializeItemStack(engineSet.item)
         val itemMeta = itemStack.itemMeta
 
         if (itemMeta != null) {
-            addEnchantments(itemMeta, isResearch(playerDoc,name))
-            setItemMetaDetails(itemMeta, isResearch(playerDoc,name), itemDoc,name)
+            addEnchantments(itemMeta, isResearch(user,engineSet.type))
+            setItemMetaDetails(itemMeta, isResearch(user,engineSet.type), engineSet)
             itemMeta.addItemFlags(ItemFlag.HIDE_ENCHANTS)
             itemStack.setItemMeta(itemMeta)
         }
@@ -97,42 +91,27 @@ class ResearchEngineGUI(plugin: JavaPlugin, private var database: MongoDatabase)
         }
     }
 
-    private fun setItemMetaDetails(itemMeta: ItemMeta, isResearch: Boolean, itemDoc: Document,name: String) {
-        val itemName = itemDoc.getString("name")
-        val itemLore = itemDoc.getString("lore")
+    private fun setItemMetaDetails(itemMeta: ItemMeta, isResearch: Boolean, engineSet: Engine) {
 
-        val tier = itemDoc.getInteger("tier")
-        val max_energy = itemDoc.getInteger("energy")
-        val lore: MutableList<String> = ArrayList()
-        lore.add(ChatColor.GRAY.toString() + itemLore)
-        lore.add("${ChatColor.AQUA}Tier: $tier")
-        lore.add(ChatColor.AQUA.toString() + "Energy: " + max_energy)
+        val lore: MutableList<String> = engineSet.lore as MutableList<String>
+        lore.add("${ChatColor.AQUA}Tier: ${engineSet.tier}")
+        lore.add(ChatColor.AQUA.toString() + "Energy: " + engineSet.energy)
         if (!isResearch) {
-            val requireEx = itemDoc.getInteger("require_ex")
-            val requireEngine = itemDoc.getString("require_engine")
-
-            lore.add(ChatColor.RED.toString() + "Require Exp: " + requireEx)
-            lore.add(ChatColor.RED.toString() + "Require Engine: " + requireEngine)
+            lore.add(ChatColor.RED.toString() + "Require Exp: " + engineSet.requireEx)
+            lore.add(ChatColor.RED.toString() + "Require Engine: " + engineSet.requireResearch)
         }
-        itemMeta.setDisplayName(ChatColor.GREEN.toString() + itemName)
+        itemMeta.setDisplayName(ChatColor.GREEN.toString() + engineSet.name)
         itemMeta.lore = lore
 
 
         val key = NamespacedKey(plugin,"name")
-        itemMeta.persistentDataContainer.set(key, PersistentDataType.STRING,name)
-    }
-    fun getItemDocument(name: String): Document {
-        val serverDoc = database.getCollection("server")
-        val item = serverDoc.find(Filters.eq("name","item")).first() as Document
-        val itemContainer = item["engines"] as Document
-        return itemContainer[name] as Document
+        itemMeta.persistentDataContainer.set(key, PersistentDataType.STRING,engineSet.name)
     }
 
-    fun isResearch(playerDoc: Document, name: String): Boolean{
-        val researchDoc = playerDoc["research"] as Document
-        val researchList: List<String> = researchDoc["engine"] as List<String>
+    fun isResearch(user: User, type: String): Boolean{
+        val researchList: List<Engine> = user.research.engine
         for(research in researchList) {
-            if(Objects.equals(research,name)) {
+            if(research.type == type) {
                 return true
             }
         }
@@ -165,42 +144,42 @@ class ResearchEngineGUI(plugin: JavaPlugin, private var database: MongoDatabase)
         item.itemMeta = meta
         return item
     }
-
     fun processEngineButton(player : Player,item: ItemStack) {
-        val playerDoc: Document = playerCollection.find(Filters.eq("name",player.name)).first()
+        val userDocument = playerCollection.find(Filters.eq("name",player.name)).first() ?: return
+        val user = Json.decodeFromString<User>(userDocument.toJson())
         val key = NamespacedKey(plugin,"name")
         val itemName = item.itemMeta.persistentDataContainer.get(key, PersistentDataType.STRING) as String
-        val researchDoc = playerDoc["research"] as Document
-        val researchList: List<String> = researchDoc["engine"] as List<String>
-        val isResearch = isResearch(playerDoc,itemName)
+        val researchList: MutableList<Engine> = user.research.engine.toMutableList()
+        val isResearch = isResearch(user,itemName)
 
         if(isResearch) {
             return
         }
-        val itemDoc = getItemDocument(itemName)
+        val engineSet = engine.engine.find { it.name == itemName } ?: return
 
-        val require_ex = itemDoc.getInteger("require_ex")
-        val require_engine = itemDoc.getString("require_engine")
+        val require_ex = engineSet.requireEx
 
-        var exp = playerDoc["research_point"] as Int
+        var exp = user.research_point
 
-        if(require_ex <= exp && researchList.contains(require_engine)) {
+        if(require_ex <= exp && researchList.find { it.type == engineSet.requireResearch } != null ) {
             exp -= require_ex
 
-            val AddedResearchList = researchList.toMutableList()
-            AddedResearchList.add(itemName)
+            researchList.add(engineSet)
+            val serializedList = researchList.map {
+                Document.parse(Json.encodeToString(it))
+            }
+
             playerCollection.updateOne(
                 Filters.eq<String>("name", player.name),
                 Updates.combine(
-                    Updates.set("research.engine", AddedResearchList),
+                    Updates.set("research.engine", serializedList),
                     Updates.set("research_point", exp)
                 )
             )
             open(plugin,player)
 
         } else {
-            player.sendMessage("조건 만족 안됨 ㅡㅡ")
+            player.sendMessage("${ChatColor.RED}연구 점수가 부족하거나 이미 연구되었습니다.")
         }
-
     }
 }

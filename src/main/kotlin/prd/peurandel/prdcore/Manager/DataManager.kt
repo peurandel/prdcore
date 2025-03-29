@@ -2,6 +2,8 @@ package prd.peurandel.prdcore.Manager
 
 import com.mongodb.client.MongoCollection
 import com.mongodb.client.model.Filters
+import kotlinx.serialization.Polymorphic
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonIgnoreUnknownKeys
@@ -29,16 +31,53 @@ data class Armor(val armor: Int, val cost: Int, val duration: Int, val weight: I
 
 @Serializable
 @JsonIgnoreUnknownKeys
+@SerialName("power_repulsor")
+data class PowerRepulsorSkill(
+    override val name: String,
+    val damage: Int, // 파워 리펄서 스킬에 필요한 속성
+    val cost: List<Int>
+) : SkillItem
+
+@Serializable
+@JsonIgnoreUnknownKeys
+@SerialName("repulsor")
+data class RepulsorSkill(
+    override val name: String,
+    val damage: Int, // 파워 리펄서 스킬에 필요한 속성
+    val cost: List<Int>
+) : SkillItem
+
+
+@Serializable
+@JsonIgnoreUnknownKeys
+@SerialName("unibeam")
+data class UnibeamSkill(
+    override val name: String,
+    val damage: Int, // 파워 리펄서 스킬에 필요한 속성
+    val cost: List<Int>
+) : SkillItem
+
+
+@Serializable
+@JsonIgnoreUnknownKeys
+@Polymorphic
+sealed interface SkillItem {
+    val name: String?
+}
+
+
+@Serializable
+@JsonIgnoreUnknownKeys
 data class Skill(
-    val slot0: List<String>,
-    val slot1: List<String>,
-    val slot2: List<String>,
-    val slot3: List<String>,
-    val slot4: List<String>,
-    val slot5: List<String>,
-    val slot6: List<String>,
-    val slot7: List<String>,
-    val slot8: List<String>
+    val slot0: List<SkillItem>,
+    val slot1: List<SkillItem>,
+    val slot2: List<SkillItem>,
+    val slot3: List<SkillItem>,
+    val slot4: List<SkillItem>,
+    val slot5: List<SkillItem>,
+    val slot6: List<SkillItem>,
+    val slot7: List<SkillItem>,
+    val slot8: List<SkillItem>
 ) {
     companion object {
         inline fun <reified T> create(name: String, serverCollection: MongoCollection<Document>): T { // 수정: 이름 변경 및 제네릭 추가
@@ -70,13 +109,14 @@ data class WardrobeItem(
     val durability: Int?
 )
 
+
 @Serializable
 @JsonIgnoreUnknownKeys
 data class Research(
-    val engine: List<String>,
-    val armor: List<String>,
-    val magic: List<String>,
-    val skill: List<String>
+    val engine: List<Engine>,
+    val armor: List<ArmorType>,
+    val magic: List<Magics>,
+    val skill: List<Skills>
 )
 
 
@@ -114,7 +154,7 @@ data class ResearchEngine(
 @JsonIgnoreUnknownKeys
 data class Engine(
     val name: String,
-    val id: String,
+    val type: String,
     val lore: List<String>,
     val tier: Byte,
     val energy: Int,
@@ -139,7 +179,7 @@ data class ResearchArmor(
 @JsonIgnoreUnknownKeys
 data class ArmorType(
     val name: String,
-    val id: String,
+    val type: String,
     val lore: List<String>,
     val armor: Int,
     val weight: Int,
@@ -172,7 +212,7 @@ data class ResearchMaterial(
 @JsonIgnoreUnknownKeys
 data class Material(
     val name: String,
-    val id: String,
+    val type: String,
     val lore: List<String>,
     val armor: Int,
     val weight: Double,
@@ -203,7 +243,7 @@ data class ResearchSkills(
 @JsonIgnoreUnknownKeys
 data class Skills(
     val name: String,
-    val id: String,
+    val type: String,
     val lore: List<String>,
     val item: String,
     val requireEx: Int,
@@ -225,7 +265,7 @@ data class ResearchMagic(
 @JsonIgnoreUnknownKeys
 data class Magics(
     val name: String,
-    val id: String,
+    val type: String,
     val lore: List<String>,
     val item: String,
     val requireEx: Int,

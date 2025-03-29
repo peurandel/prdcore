@@ -104,48 +104,48 @@ class PRDCommand(private val plugin: JavaPlugin,database: MongoDatabase) : Comma
             "engine" -> {
                 val List = (ResearchEngine.create(ServerCollection) as ResearchEngine).engine
                 for(i in List.indices) {
-                    if(List[i].id ==id) {
+                    if(List[i].type ==id) {
                         return i
                     }
-                    return null
                 }
+                return null
             }
             "armor" -> {
                 val List = ResearchArmor.create(ServerCollection).armor
                 for(i in List.indices) {
-                    if(List[i].id ==id) {
+                    if(List[i].type ==id) {
                         return i
                     }
-                    return null
                 }
+                return null
             }
             "material" -> {
                 val List = ResearchMaterial.create(ServerCollection).material
                 for(i in List.indices) {
-                    if(List[i].id ==id) {
+                    if(List[i].type ==id) {
                         return i
                     }
-                    return null
                 }
+                return null
             }
             "skills" -> {
                 val List = (ResearchSkills.create(ServerCollection) as ResearchSkills).skills
                 for(i in List.indices) {
-                    if(List[i].id ==id) {
+                    if(List[i].type ==id) {
                         return i
                     }
-                    return null
                 }
+                return null
             }
 
             "magics" -> {
                 val List = (ResearchMagic.create(ServerCollection) as ResearchMagic).magics
                 for(i in List.indices) {
-                    if(List[i].id ==id) {
+                    if(List[i].type ==id) {
                         return i
                     }
-                    return null
                 }
+                return null
             }
         }
         return null
@@ -171,7 +171,8 @@ class PRDCommand(private val plugin: JavaPlugin,database: MongoDatabase) : Comma
         }
         val handItem: String = ItemSerialization.serializeItemStack(player.inventory.itemInMainHand)
 
-        player.sendMessage("발겨한 인덱스 : ${getTypeIndex(args[2],args[3])}")
+        player.sendMessage("${getTypeIndex(args[2],args[3])}")
+
         ServerCollection.updateOne(
             Filters.eq<String>("name", typeName),
             Updates.combine(

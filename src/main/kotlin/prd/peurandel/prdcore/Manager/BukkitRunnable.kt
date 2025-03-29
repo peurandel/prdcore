@@ -1,8 +1,12 @@
 package prd.peurandel.prdcore.Manager
 
 import com.mongodb.client.MongoDatabase
+import com.mongodb.client.model.Filters
+import io.papermc.paper.datacomponent.DataComponentType
 import io.papermc.paper.datacomponent.DataComponentTypes
+import kotlinx.serialization.json.Json
 import net.kyori.adventure.key.Key
+import net.kyori.adventure.text.Component
 import org.bson.Document
 import org.bukkit.Bukkit
 import org.bukkit.ChatColor
@@ -14,6 +18,8 @@ import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.potion.PotionEffect
 import org.bukkit.potion.PotionEffectType
 import org.bukkit.scheduler.BukkitRunnable
+import org.bukkit.scoreboard.Scoreboard
+import org.bukkit.scoreboard.ScoreboardManager
 import org.bukkit.util.NumberConversions
 import org.bukkit.util.Vector
 import java.util.*
@@ -26,6 +32,11 @@ class BukkitRunnable(plugin: JavaPlugin,database: MongoDatabase) : BukkitRunnabl
 
     val plugin = plugin
     val suitManager = SuitManager(plugin, database)
+    val skillManager = SkillManager(plugin) // plugin은 당신의 JavaPlugin 인스턴스
+    private val sidebarManager = SidebarManager(database)
+    val playerCollection = database.getCollection("users")
+    private val scoreboardManager: ScoreboardManager = Bukkit.getScoreboardManager()
+
     override fun run() {
         // 모든 플레이어를 대상으로 연산 수행
         for (player in Bukkit.getOnlinePlayers()) {
@@ -36,10 +47,19 @@ class BukkitRunnable(plugin: JavaPlugin,database: MongoDatabase) : BukkitRunnabl
     private fun performOperation(player: Player) {
         val key = player.uniqueId
         if (!isInHash(key)) return
+        val user = Json.decodeFromString<User>(playerCollection.find(Filters.eq("name",player.name)).first().toJson())
+
+        // Get the player's specific scoreboard from sidebarManager
+        val playerScoreboard = sidebarManager.getPlayerScoreboard(player)
+
+        // Update the sidebar with the player's specific scoreboard
+        sidebarManager.updateSidebar(player, playerScoreboard, user.money, 0, user.research_point)
 
         val map: MutableMap<String, Any?> = PlayerDataCache.cache[key] ?: return
         if (isHavingSuit(map)) SuitHandler(map, player)
-
+        else {
+            if(isHavingController(player)) player.inventory.setItemInOffHand(ItemStack(Material.AIR))
+        }
 
     }
 
@@ -55,19 +75,19 @@ class BukkitRunnable(plugin: JavaPlugin,database: MongoDatabase) : BukkitRunnabl
 
 
         val suit = map["suit"] as Document
+        val Suit : WardrobeItem = Json.decodeFromString(suit.toJson())
 
-        //controller handle
-
+        //controller handler
+        controllerHandler(player)
         //Energy
-        val energy = suit["energy"] as Int
-        val max_energy = suit["max_energy"] as Int
+        val energy = Suit.energy as Int
+        val max_energy = Suit.max_energy as Int
         val energyPer = energy * 100 / max_energy
         //Durability
 
-        val durability = suit["durability"] as Int
-        val max_durability = suit["max_durability"] as Int
-        val durabilityPer = durability * 100 / max_durability.toInt()
-
+        val durability = Suit.durability as Int
+        val max_durability = Suit.max_durability as Int
+        val durabilityPer = durability * 100 / max_durability
         val currentSpeed = map["flightSpeed"] as? Vector ?: Vector(0.0, 0.0, 0.0)
         val currentSpeedInKmPerHour: Int = (currentSpeed.length() * 72).toInt()
 
@@ -82,7 +102,7 @@ class BukkitRunnable(plugin: JavaPlugin,database: MongoDatabase) : BukkitRunnabl
 
         if (slotskill.isNotEmpty() && slotskill[0] != null) { // null 체크와 isNotEmpty() 체크 모두 수행
             val skill = slotskill[0] as Document
-            actionBarMessage.append(" ${ChatColor.GRAY} ${ChatColor.BOLD} ${skill["name"]} ${ChatColor.RESET}")
+            actionBarMessage.append("${ChatColor.GRAY} ${ChatColor.BOLD} ${skill["name"]} ${ChatColor.RESET}")
         }
 
         actionBarMessage.append(" ${ChatColor.AQUA}Durability: $durabilityPer%")
@@ -105,26 +125,40 @@ class BukkitRunnable(plugin: JavaPlugin,database: MongoDatabase) : BukkitRunnabl
         if (map["isFlight"] == (true ?: false)) flightHandler(map, player)
 
         // 스킬
-        // 스킬 바꾸기
+        if (map["right_clicked"] == true) {
+            if (player.currentInput.isSneak) {
+                Collections.rotate(slotskill,-1)
+            }
+            else {
+                val skill = slotskill[0] as Document
+                skillManager.triggerSkill("${skill["type"]}", player)
 
-        if (player.currentInput.isSneak) {
-            Collections.rotate(slotskill,-1)
-
+            }
+            map["right_clicked"] = false
         }
+
     }
 
     fun controllerHandler(player: Player) {
-
         val controllSlot = player.inventory.itemInOffHand
-
-        if(controllSlot != null) {
-            val controller = ItemStack.of(Material.STICK)
-            val itemModelKey: Key = Key.key("minecraft", "item_model/air")
-            val controllerMeta = controller.itemMeta
-            controller.setData(DataComponentTypes.ITEM_MODEL,itemModelKey)
-            player.inventory.setItemInOffHand(controller)
+        if(controllSlot.getData(DataComponentTypes.ITEM_NAME) != Component.text("컨트롤러")) {
+            player.inventory.addItem(controllSlot)
+            add_controller(player)
         }
+    }
 
+    fun isHavingController(player: Player) : Boolean {
+        val itemInOffHand = player.inventory.itemInOffHand
+        return itemInOffHand.getData(DataComponentTypes.ITEM_NAME) == Component.text("컨트롤러")
+    }
+    fun add_controller(player: Player) {
+        val controller = ItemStack.of(Material.STICK)
+        val itemModelKey: Key = Key.key("minecraft", "air")
+        val itemNameComponent: Component = Component.text("컨트롤러")
+        val controllerMeta = controller.itemMeta
+        controller.setData(DataComponentTypes.ITEM_MODEL,itemModelKey)
+        controller.setData(DataComponentTypes.ITEM_NAME,itemNameComponent)
+        player.inventory.setItemInOffHand(controller)
     }
     fun flightHandler(map: MutableMap<String, Any?>, player: Player) {
         player.addPotionEffect(PotionEffect(PotionEffectType.SLOW_FALLING, 20, 1, false, false))

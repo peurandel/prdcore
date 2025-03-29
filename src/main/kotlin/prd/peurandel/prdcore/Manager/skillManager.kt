@@ -5,35 +5,55 @@ import org.bukkit.event.Event
 import org.bukkit.event.Listener
 import org.bukkit.plugin.Plugin
 import prd.peurandel.prdcore.Handler.SkillHandler
+import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
+import kotlin.reflect.full.companionObjectInstance
 import kotlin.reflect.full.declaredFunctions
 
 
 class SkillManager(private val plugin: Plugin) : Listener {
 
     private val skillHandlers: MutableMap<String, MutableList<KFunction<*>>> = mutableMapOf()
+    private val handlerInstances: MutableMap<KClass<*>, Any> = mutableMapOf()
+
 
     init {
-        // SkillHandler 어노테이션이 붙은 함수들을 찾아 skillHandlers 맵에 등록
         registerSkillHandlers()
-        Bukkit.getPluginManager().registerEvents(this, plugin) // 이벤트 리스너 등록 (필요한 경우)
+        plugin.logger.info("등록된 스킬 핸들러: ${skillHandlers.keys}")
+        skillHandlers.forEach { (skillId, handlers) ->
+            plugin.logger.info("스킬 ID: $skillId, 핸들러 수: ${handlers.size}")
+        }
     }
+
     private fun registerSkillHandlers() {
-        // 플러그인의 모든 클래스를 순회하며 SkillHandler 어노테이션이 붙은 함수를 찾음
-        plugin::class.declaredFunctions.forEach { function -> // function은 KFunction<*> 타입
-            // function.kotlinFunction.let { kotlinFunction -> // kotlinFunction 부분 제거
-            function.let { kotlinFunction -> // function을 직접 kotlinFunction으로 사용
-                val skillHandlerAnnotation = kotlinFunction.annotations.find { it is SkillHandler } as? SkillHandler
+        // 플러그인 클래스 자체의 함수 스캔
+        scanClassForHandlers(plugin::class)
+
+        // 여기에 다른 클래스들도 추가
+        scanClassForHandlers(prd.peurandel.prdcore.EventListner.SkillHandler::class) // 예시
+    }
+    private fun scanClassForHandlers(kotlinClass: KClass<*>) {
+        // 클래스의 함수 스캔
+        kotlinClass.declaredFunctions.forEach { function ->
+            val skillHandlerAnnotation = function.annotations.find { it is SkillHandler } as? SkillHandler
+            skillHandlerAnnotation?.let {
+                val skillId = it.skillId
+                skillHandlers.getOrPut(skillId) { mutableListOf() }.add(function)
+            }
+        }
+
+        // 컴패니언 객체의 함수도 스캔
+        kotlinClass.companionObjectInstance?.let { companion ->
+            companion::class.declaredFunctions.forEach { function ->
+                val skillHandlerAnnotation = function.annotations.find { it is SkillHandler } as? SkillHandler
                 skillHandlerAnnotation?.let {
                     val skillId = it.skillId
-                    skillHandlers.getOrPut(skillId) { mutableListOf() }.add(kotlinFunction)
+                    skillHandlers.getOrPut(skillId) { mutableListOf() }.add(function)
                 }
             }
         }
-        // 필요하다면, 특정 패키지 또는 클래스에서만 스캔하도록 변경 가능
-        // 예: 특정 클래스 내에서만 스캔
-        // MySkillHandlerClass::class.declaredFunctions.forEach { ... }
     }
+
 
 
     /**
@@ -42,15 +62,25 @@ class SkillManager(private val plugin: Plugin) : Listener {
      * @param context 스킬 실행에 필요한 추가 정보 (선택 사항)
      */
     fun triggerSkill(skillId: String, context: Any? = null) {
-        val handlers = skillHandlers[skillId] ?: return // 해당 스킬 ID에 등록된 핸들러가 없으면 종료
+        val handlers = skillHandlers[skillId] ?: return
 
         handlers.forEach { handler ->
             try {
-                // 핸들러 함수 실행, context 정보를 파라미터로 전달
-                handler.call(plugin, SkillTriggerEvent(skillId, context)) // 'plugin' 인스턴스를 첫 번째 파라미터로 전달 (필요에 따라 변경)
+                val parameterCount = handler.parameters.size
+                when (parameterCount) {
+                    2 -> handler.call(plugin, SkillTriggerEvent(skillId, context))
+                    3 -> {
+                        // 첫 번째 매개변수의 클래스 가져오기
+                        val instanceClass = handler.parameters[0].type.classifier as? KClass<*>
+                        // 싱글톤 객체이거나 컴패니언 객체인 경우 해당 인스턴스 사용
+                        val instance = instanceClass?.objectInstance ?: plugin
+                        handler.call(instance, plugin, SkillTriggerEvent(skillId, context))
+                    }
+                    else -> plugin.logger.warning("Unexpected parameter count for skill handler: $parameterCount")
+                }
             } catch (e: Exception) {
                 plugin.logger.warning("Error while executing SkillHandler for skillId: $skillId")
-                e.printStackTrace() // 에러 로깅
+                e.printStackTrace()
             }
         }
     }
