@@ -14,7 +14,7 @@ import org.bukkit.plugin.java.JavaPlugin
 import prd.peurandel.prdcore.ItemStack.Button
 
 class ModuleOrbitalGUI(plugin: JavaPlugin, database: MongoDatabase, suitUUID: String) : BaseGUI(plugin,"Module Orbital",54) {
-    private val database = database
+        private val database = database
     private val suitUUID = suitUUID
 
     override fun initializeItems(plugin: JavaPlugin, player: String) {

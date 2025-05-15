@@ -17,7 +17,7 @@ class SneakHandler(plugin: JavaPlugin, database: MongoDatabase): Listener {
         val player = event.player
         val playerUUID = player.uniqueId
         val map: MutableMap<String, Any?> = PlayerDataCache.cache[playerUUID] ?: return
-        if(map["suit"] != null) {
+        if(map["suit"] != null && map["onFlightMode"] == true) {
             if(!player.isOnGround && map["isFlight"] != true)
                 bukkitRunnable.startFlight(player,map)
         }

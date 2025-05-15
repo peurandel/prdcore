@@ -62,7 +62,19 @@ class SuitManager(val plugin: JavaPlugin, database: MongoDatabase) {
         PlayerDataCache.cache[player.uniqueId] = suitData
     }
     fun offSuit(player: Player) {
+
         val key = NamespacedKey(plugin, "suit")
+
+        val suit = player.persistentDataContainer.get(key, PersistentDataType.STRING) ?: return // null일 경우 종료
+
+        // 첫 번째 "."의 위치를 찾음
+        val SuitArr = suit.split(":")
+
+        // 첫 번째 "."을 기준으로 나누기
+        val suitOwner = SuitArr[0]
+        val suitUUID = SuitArr[1]
+        saveSuit(player,suitOwner,suitUUID)
+
         player.persistentDataContainer.remove(key)
         PlayerDataCache.cache[player.uniqueId]?.remove("suit")
         //unwearing armor

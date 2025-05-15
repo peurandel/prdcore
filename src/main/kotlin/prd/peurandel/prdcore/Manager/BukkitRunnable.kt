@@ -8,12 +8,11 @@ import kotlinx.serialization.json.Json
 import net.kyori.adventure.key.Key
 import net.kyori.adventure.text.Component
 import org.bson.Document
-import org.bukkit.Bukkit
-import org.bukkit.ChatColor
+import org.bukkit.*
 import org.bukkit.Material
-import org.bukkit.Particle
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
+import org.bukkit.persistence.PersistentDataType
 import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.potion.PotionEffect
 import org.bukkit.potion.PotionEffectType
@@ -22,6 +21,7 @@ import org.bukkit.scoreboard.Scoreboard
 import org.bukkit.scoreboard.ScoreboardManager
 import org.bukkit.util.NumberConversions
 import org.bukkit.util.Vector
+import prd.peurandel.prdcore.EventListner.SkillTick
 import java.util.*
 import kotlin.math.acos
 import kotlin.math.max
@@ -31,22 +31,34 @@ import kotlin.math.sin
 class BukkitRunnable(plugin: JavaPlugin,database: MongoDatabase) : BukkitRunnable() {
 
     val plugin = plugin
+    val database = database
     val suitManager = SuitManager(plugin, database)
-    val skillManager = SkillManager(plugin) // plugin은 당신의 JavaPlugin 인스턴스
+    val skillManager = SkillManager(plugin)
+    val skillTick = SkillTick(plugin)
     private val sidebarManager = SidebarManager(database)
-    val playerCollection = database.getCollection("users")
     private val scoreboardManager: ScoreboardManager = Bukkit.getScoreboardManager()
 
     override fun run() {
         // 모든 플레이어를 대상으로 연산 수행
-        for (player in Bukkit.getOnlinePlayers()) {
-            performOperation(player)
+        for (world in Bukkit.getServer().worlds) {
+            for (entity in world.entities) {
+
+                // 레이저임을 식별하기 위한 데이터 태그
+                val key = entity.persistentDataContainer.get(NamespacedKey(plugin, "skill"), PersistentDataType.STRING) ?: "null"
+                val type = entity.persistentDataContainer.get(NamespacedKey(plugin, "type"), PersistentDataType.STRING) ?: "null"
+                if(entity is Player) {
+                    performOperation(entity)
+                } else if(type == "skill") {
+                    skillTick.tick(key,entity)
+                }
+            }
         }
     }
 
     private fun performOperation(player: Player) {
         val key = player.uniqueId
         if (!isInHash(key)) return
+        val playerCollection = database.getCollection("users")
         val user = Json.decodeFromString<User>(playerCollection.find(Filters.eq("name",player.name)).first().toJson())
 
         // Get the player's specific scoreboard from sidebarManager
@@ -91,21 +103,26 @@ class BukkitRunnable(plugin: JavaPlugin,database: MongoDatabase) : BukkitRunnabl
         val currentSpeed = map["flightSpeed"] as? Vector ?: Vector(0.0, 0.0, 0.0)
         val currentSpeedInKmPerHour: Int = (currentSpeed.length() * 72).toInt()
 
-        val actionBarMessage = StringBuilder("${ChatColor.GREEN}Energy: $energyPer%")
+        val actionBarMessage = StringBuilder("${ChatColor.GREEN}E: $energyPer%")
 
         if (map["isFlight"] == true) {
             actionBarMessage.append("${ChatColor.WHITE} $currentSpeedInKmPerHour km/h")
         }
+        if(map["onFlightMode"] == true) { /*엔진 차징용*/
+            map["EngineCharge"] = ChargeEngine(map)
+            actionBarMessage.append("${ChatColor.WHITE} ${(map["EngineCharge"] as Double *100).toInt()}% ")
+        }
+
         val skillDoc = suit["skill"] as Document
         val heldItemSlot = player.inventory.heldItemSlot
         val slotskill = skillDoc["slot$heldItemSlot"] as ArrayList<*>
+        val skill = if(slotskill.isNotEmpty() && slotskill[0] != null) {
+            slotskill[0] as Document
+        } else null
 
-        if (slotskill.isNotEmpty() && slotskill[0] != null) { // null 체크와 isNotEmpty() 체크 모두 수행
-            val skill = slotskill[0] as Document
-            actionBarMessage.append("${ChatColor.GRAY} ${ChatColor.BOLD} ${skill["name"]} ${ChatColor.RESET}")
-        }
+        if (skill!=null) actionBarMessage.append("${ChatColor.GRAY} ${ChatColor.BOLD} ${skill["name"]} ${ChatColor.RESET}")
 
-        actionBarMessage.append(" ${ChatColor.AQUA}Durability: $durabilityPer%")
+        actionBarMessage.append(" ${ChatColor.AQUA}D: $durabilityPer%")
 
         player.sendActionBar(actionBarMessage.toString())
 
@@ -130,15 +147,22 @@ class BukkitRunnable(plugin: JavaPlugin,database: MongoDatabase) : BukkitRunnabl
                 Collections.rotate(slotskill,-1)
             }
             else {
-                val skill = slotskill[0] as Document
-                skillManager.triggerSkill("${skill["type"]}", player)
+                if(slotskill.isNotEmpty() && slotskill[0] != null) {
+                    val skill = slotskill[0] as Document
+                    skillManager.triggerSkill("${skill["type"]}", player)
 
+                }
             }
             map["right_clicked"] = false
         }
 
     }
 
+    fun ChargeEngine(map: MutableMap<String, Any?>): Double {
+        var engineCharge= map["EngineCharge"] as? Double ?: 0.0
+        if (engineCharge<1.0) engineCharge += 0.01
+        return engineCharge
+    }
     fun controllerHandler(player: Player) {
         val controllSlot = player.inventory.itemInOffHand
         if(controllSlot.getData(DataComponentTypes.ITEM_NAME) != Component.text("컨트롤러")) {
@@ -163,6 +187,10 @@ class BukkitRunnable(plugin: JavaPlugin,database: MongoDatabase) : BukkitRunnabl
     fun flightHandler(map: MutableMap<String, Any?>, player: Player) {
         player.addPotionEffect(PotionEffect(PotionEffectType.SLOW_FALLING, 20, 1, false, false))
         player.world.spawnParticle(Particle.FLAME, player.location, 3, 0.0, 0.0, 0.0, 0.1, null)
+
+        if (map["EngineCharge"]==null) {
+            player.sendMessage("${ChatColor.RED}ERROR: NOT FOUND ENGINE CHARGE")
+        }
 
         if (player.isOnGround) stopFlight(player)
 
@@ -234,7 +262,9 @@ class BukkitRunnable(plugin: JavaPlugin,database: MongoDatabase) : BukkitRunnabl
 
 
     fun calcurateAccelerate(map: MutableMap<String, Any?>,suit: Document): Double {
-        val propulsion: Double = (suit["propulsion"] ?: 2000.0) as Double
+        val engineCharge= map["EngineCharge"] as Double
+        var propulsion: Double = (suit["propulsion"] ?: 2000.0) as Double
+        propulsion *= engineCharge
         val armorDoc = suit["armor"] as Document
         val armorWeight = armorDoc["weight"] as Int
         //val height = map["height"] as Int

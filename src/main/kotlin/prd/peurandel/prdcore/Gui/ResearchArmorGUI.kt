@@ -3,6 +3,7 @@ package prd.peurandel.prdcore.Gui
 import com.mongodb.client.MongoDatabase
 import com.mongodb.client.model.Filters
 import com.mongodb.client.model.Updates
+import kotlinx.serialization.json.Json
 import org.bson.Document
 import org.bukkit.Bukkit
 import org.bukkit.ChatColor
@@ -17,14 +18,17 @@ import org.bukkit.inventory.meta.ItemMeta
 import org.bukkit.persistence.PersistentDataType
 import org.bukkit.plugin.java.JavaPlugin
 import prd.peurandel.prdcore.ItemStack.Button
+import prd.peurandel.prdcore.Manager.*
 import java.util.*
 
 class ResearchArmorGUI(plugin: JavaPlugin, private var database: MongoDatabase) : BaseGUI(plugin,"Research Armor",54) {
     val playerCollection = database.getCollection("users")
+    val serverCollection = database.getCollection("server")
+    val armor = Json.decodeFromString<ResearchArmor>(serverCollection.find(Filters.eq("name", "ArmorType")).first().toJson())
 
     override fun initializeItems(plugin: JavaPlugin, player: String) {
         val playerCollection = database.getCollection("users")
-        val playerDoc: Document = playerCollection.find(Filters.eq("name",player)).first()
+        val user = Json.decodeFromString<User>(playerCollection.find(Filters.eq("name",player)).first().toJson())
 
         for(i in 0..53) {
             inventory.setItem(i, ItemStack(Material.LIGHT_GRAY_STAINED_GLASS_PANE))
@@ -32,13 +36,9 @@ class ResearchArmorGUI(plugin: JavaPlugin, private var database: MongoDatabase) 
         val item: ItemStack = GUIInfo(Bukkit.getOfflinePlayer(player).player?.uniqueId.toString())
 
         inventory.setItem(4, Button().Armor(plugin))
-        inventory.setItem(10, getResearch(playerDoc,"Homogenous Rolled Armor"))
-        inventory.setItem(11, getResearch(playerDoc,"Cast Armor"))
-        inventory.setItem(12, getResearch(playerDoc,"Composite Armor"))
-        inventory.setItem(13, getResearch(playerDoc,"Reactive Armor"))
-        inventory.setItem(14, getResearch(playerDoc,"Spaced Armor"))
-        inventory.setItem(15, getResearch(playerDoc,"Nano Armor"))
-
+        for(i in armor.armor.indices) {
+            inventory.setItem(i+9, getResearch(user,armor.armor[i]))
+        }
         inventory.setItem(48, Button().GoBack(plugin,"To Research Menu"))
         inventory.setItem(49,item)
     }
@@ -59,17 +59,18 @@ class ResearchArmorGUI(plugin: JavaPlugin, private var database: MongoDatabase) 
             }
         }
     }
-    fun getResearch(playerDoc: Document, name: String): ItemStack{
-        val researchDoc = playerDoc["research"] as Document
-        val isResearch = isResearch(researchDoc,name)
-        val itemDoc = getItemDocument(name)
+    fun getResearch(user: User, Armor: ArmorType): ItemStack{
 
-        val itemStack: ItemStack = ItemStack(Material.BARRIER)//ItemSerialization.deserializeItemStack(itemDoc.getString("item"))
+        // research가 있긴한데 item이 없으면 air return
+        if(Armor.item == null) { return ItemStack(Material.AIR)}
+        val isResearch = isResearch(user.research.armor,Armor.type)
+
+        val itemStack: ItemStack = ItemStack(Material.BARRIER) //ItemSerialization.deserializeItemStack(itemDoc.getString("item"))
         val itemMeta = itemStack.itemMeta
 
         if (itemMeta != null) {
             addEnchantments(itemMeta, isResearch)
-            setItemMetaDetails(itemMeta, isResearch, itemDoc,name)
+            setItemMetaDetails(itemMeta, isResearch,Armor.type)
             itemMeta.addItemFlags(ItemFlag.HIDE_ENCHANTS)
             itemStack.setItemMeta(itemMeta)
         }
@@ -81,48 +82,38 @@ class ResearchArmorGUI(plugin: JavaPlugin, private var database: MongoDatabase) 
         }
     }
 
-    private fun setItemMetaDetails(itemMeta: ItemMeta, isResearch: Boolean, itemDoc: Document,name: String) {
-        val itemName = itemDoc.getString("name")
-        val itemLore = itemDoc.getString("lore")
+    private fun setItemMetaDetails(itemMeta: ItemMeta, isResearch: Boolean,type: String) {
+        val armorSet = armor.armor.find {it.type==type} as ArmorType
+        val itemType = armorSet.type
 
-        val weight = itemDoc.getInteger("weight")
-        val duration = itemDoc.getInteger("duration")
-        val armor = itemDoc.getInteger("armor")
-        val cost = itemDoc.getInteger("cost")
+        val weight = armorSet.weight
+        val duration = armorSet.duration
+        val armor = armorSet.armor
+        val cost = armorSet.cost
 
-        val lore: MutableList<String> = ArrayList()
-        lore.add(ChatColor.GRAY.toString() + itemLore)
+        val lore: MutableList<String> = armorSet.lore as MutableList<String>
         lore.add((if (weight == 0) ChatColor.YELLOW else if (weight < 0) ChatColor.BLUE else ChatColor.RED).toString() + "Weight: " + weight+"%")
         lore.add((if (duration == 0) ChatColor.YELLOW else if (duration > 0) ChatColor.BLUE else ChatColor.RED).toString() + "Duration: " + duration+"%")
         lore.add((if (armor == 0) ChatColor.YELLOW else if (armor > 0) ChatColor.BLUE else ChatColor.RED).toString() + "Armor: " + armor+"%")
         lore.add((if (cost == 0) ChatColor.YELLOW else if (cost < 0) ChatColor.BLUE else ChatColor.RED).toString() + "Cost: " + cost+"%")
         if (!isResearch) {
-            val require_ex = itemDoc.getInteger("require_ex")
-            val require_engine = itemDoc.getString("require_engine")
+            val require_ex = armorSet.requireEx
+            //val require_engine = armorSet.require TODO: 언젠가 ArmorType Require Engine 부분 추가해야함
 
             lore.add("${ChatColor.RED}Require Exp: ${require_ex}")
-            lore.add("${ChatColor.RED}Require Engine: ${require_engine}")
+            //lore.add("${ChatColor.RED}Require Engine: ${require_engine}") TODO: 언젠가 ArmorType Require Engine 부분 추가해야함
         }
 
         val key = NamespacedKey(plugin,"name")
-        itemMeta.persistentDataContainer.set(key, PersistentDataType.STRING,name)
-        itemMeta.setDisplayName(ChatColor.GREEN.toString() + itemName)
+        itemMeta.persistentDataContainer.set(key, PersistentDataType.STRING,type)
+        itemMeta.setDisplayName(ChatColor.GREEN.toString() + itemType)
         itemMeta.lore = lore
     }
-    fun getItemDocument(name: String): Document {
-        val serverDoc = database.getCollection("server")
-        val item = serverDoc.find(Filters.eq("name","item")).first() as Document
-        val itemContainer = item["armor"] as Document
-        return itemContainer[name] as Document
-    }
 
 
-    fun isResearch(researchDoc: Document, name: String): Boolean{
-        val researchList: List<String> = researchDoc["armor"] as List<String>
-        //val researchEngineList: List<String> = researchDoc["engine"] as List<String>
-
-        for(research in researchList) {
-            if(Objects.equals(research,name)) {
+    fun isResearch(research: List<ArmorType>, type: String): Boolean{
+        for(researchSet in research) {
+            if(researchSet.type==type) {
                 return true
             }
         }
@@ -158,34 +149,38 @@ class ResearchArmorGUI(plugin: JavaPlugin, private var database: MongoDatabase) 
 
 
     fun processArmorButton(player : Player,item: ItemStack) {
-        val playerDoc: Document = playerCollection.find(Filters.eq("name",player.name)).first()
+        val user = Json.decodeFromString<User>(playerCollection.find(Filters.eq("name",player.name)).first().toJson())
         val key = NamespacedKey(plugin,"name")
-        val itemName = item.itemMeta.persistentDataContainer.get(key, PersistentDataType.STRING) as String
-        val researchDoc = playerDoc["research"] as Document
-        val researchList: List<String> = researchDoc["armor"] as List<String>
-        val researchEngineList: List<String> = researchDoc["engine"] as List<String>
+        val itemType = item.itemMeta.persistentDataContainer.get(key, PersistentDataType.STRING) as String
+        // val researchEngineList: List<String> = researchDoc["engine"] as List<String> TODO: 언젠가 ArmorType Require Engine 부분 추가해야함
+        val researchList: MutableList<ArmorType> = user.research.armor.toMutableList()
 
-        val isResearch = isResearch(researchDoc,itemName)
+        val isResearch = isResearch(user.research.armor,itemType)
 
         if(isResearch) {
+            player.sendMessage("${ChatColor.RED}이미 연구된 항목입니다.")
             return
         }
-        val itemDoc = getItemDocument(itemName)
+        val armorSet = armor.armor.find {it.type == itemType} as ArmorType
 
-        val requireEx = itemDoc.getInteger("require_ex")
-        val requireEngine = itemDoc.getString("require_engine")
+        val requireEx = armorSet.requireEx
+        // val requireEngine = armorSet.require_engine TODO: 언젠가 ArmorType Require Engine 부분 추가해야함
 
-        var exp = playerDoc.get("research_point") as Int
+        var exp = user.research_point
 
-        if(requireEx <= exp && researchEngineList.contains(requireEngine)) {
+        if(requireEx <= exp /*&& researchEngineList.contains(requireEngine)*/) { // TODO: 언젠가 ArmorType Require Engine 부분 추가해야함
             exp -= requireEx
 
-            val AddedResearchList = researchList.toMutableList()
-            AddedResearchList.add(itemName)
+
+            researchList.add(armorSet)
+            val serializedList = researchList.map {
+                Document.parse(Json.encodeToString(it))
+            }
+
             playerCollection.updateOne(
                 Filters.eq<String>("name", player.name),
                 Updates.combine(
-                    Updates.set("research.armor", AddedResearchList),
+                    Updates.set("research.armor", serializedList),
                     Updates.set("research_point", exp)
                 )
             )

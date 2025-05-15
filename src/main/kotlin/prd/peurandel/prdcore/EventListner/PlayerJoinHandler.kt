@@ -33,10 +33,8 @@ class PlayerJoinHandler(database: MongoDatabase,private val plugin: Main): Liste
         if(isExisting(player)) updateUserName(player)
         else createNewUser(player)
 
-
-
+        // 사이드바
         plugin.sidebarManager.createSidebar(event.player)
-
 
         setMap(player)
         loadSuit(player)

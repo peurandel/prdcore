@@ -17,8 +17,7 @@ class SidebarManager(database: MongoDatabase) {
 
     private val scoreboardManager: ScoreboardManager = Bukkit.getScoreboardManager()
     private val sidebarMap: MutableMap<Player, Scoreboard> = mutableMapOf()
-    val playerCollection = database.getCollection("users")
-
+    val database = database
     fun createSidebar(player: Player) {
         val scoreboard: Scoreboard = scoreboardManager.newScoreboard
         val objective: Objective = scoreboard.registerNewObjective("simpleSidebar", "dummy", Component.text("${ChatColor.AQUA}${ChatColor.BOLD}SUIT"))
@@ -76,11 +75,13 @@ class SidebarManager(database: MongoDatabase) {
 
 
     private fun getMoneyValue(player: Player): Int {
+        val playerCollection = database.getCollection("users")
         val user = Json.decodeFromString<User>(playerCollection.find(Filters.eq("name",player.name)).first().toJson())
         return user.money
     }
 
     private fun getResearchValue(player: Player): Int {
+        val playerCollection = database.getCollection("users")
         val user = Json.decodeFromString<User>(playerCollection.find(Filters.eq("name",player.name)).first().toJson())
         return user.research_point
     }

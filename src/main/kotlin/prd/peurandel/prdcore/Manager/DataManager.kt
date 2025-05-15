@@ -1,5 +1,6 @@
 package prd.peurandel.prdcore.Manager
 
+import com.google.common.math.IntMath
 import com.mongodb.client.MongoCollection
 import com.mongodb.client.model.Filters
 import kotlinx.serialization.Polymorphic
@@ -16,6 +17,49 @@ fun getData(name: String, serverCollection: MongoCollection<Document>): Any {
     return Json.decodeFromString(serverCollection.find(Filters.eq("name",name)).first()!!.toJson())
 
 }
+data class ItemInfo(val price: Int, val lore: List<String>)
+
+// 상점
+@Serializable
+@JsonIgnoreUnknownKeys
+data class AdminShop(
+    val name: String = "Shop",
+    val shop: MutableList<AdminShopItem>
+)
+
+@Serializable
+@JsonIgnoreUnknownKeys
+data class AdminShopItem(
+    val cost: Int,
+    val item: String,
+    val lore: List<String>,
+    val tradeType: String
+)
+
+@Serializable
+@JsonIgnoreUnknownKeys
+data class TradeInfo(
+    val type: String,
+    val seller: String,
+    val buyer: String,
+    val item: String,
+    val tradetime: Int,
+    val tradeprice: Int
+    )
+
+@Serializable
+@JsonIgnoreUnknownKeys
+data class Bazaar(
+    val name: String = "Bazaar",
+    val bazaar: MutableList<BazaarItem>
+)
+
+@Serializable
+@JsonIgnoreUnknownKeys
+data class BazaarItem(
+    val item: String
+)
+
 @Serializable
 data class Changable(val height: Boolean) {
     companion object {
@@ -28,6 +72,15 @@ data class Changable(val height: Boolean) {
 @Serializable
 data class Armor(val armor: Int, val cost: Int, val duration: Int, val weight: Int)
 
+@Serializable
+@JsonIgnoreUnknownKeys
+@SerialName("fly")
+data class FlySkill(
+    override val name: String,
+    val chargeSpeed: Int,
+    val damage: Int,
+    val cost: List<Int>
+) : SkillItem
 
 @Serializable
 @JsonIgnoreUnknownKeys
@@ -47,7 +100,6 @@ data class RepulsorSkill(
     val cost: List<Int>
 ) : SkillItem
 
-
 @Serializable
 @JsonIgnoreUnknownKeys
 @SerialName("unibeam")
@@ -56,7 +108,6 @@ data class UnibeamSkill(
     val damage: Int, // 파워 리펄서 스킬에 필요한 속성
     val cost: List<Int>
 ) : SkillItem
-
 
 @Serializable
 @JsonIgnoreUnknownKeys
@@ -93,7 +144,7 @@ data class WardrobeItem(
     val uuid: String,
     val engine: String?,
     val tier: Int?,
-    val energy: Int?,
+    var energy: Int?,
     val skill: Skill,
     val armorName: String?,
     val material: String?,
@@ -130,7 +181,7 @@ data class User(
     val changable: Changable,
     val wardrobe: MutableList<WardrobeItem>,
     val wardrobeCount: Int,
-    val money: Int,
+    var money: Int,
     val wardrobepage: Int,
     val research_point: Int,
     val research: Research
@@ -185,7 +236,7 @@ data class ArmorType(
     val weight: Int,
     val cost: Int,
     val duration: Int,
-    val item: String,
+    val item: String?,
     val requireEx: Int
     ) {
     companion object {

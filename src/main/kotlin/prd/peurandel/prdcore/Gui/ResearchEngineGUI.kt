@@ -145,8 +145,7 @@ class ResearchEngineGUI(plugin: JavaPlugin, private var database: MongoDatabase)
         return item
     }
     fun processEngineButton(player : Player,item: ItemStack) {
-        val userDocument = playerCollection.find(Filters.eq("name",player.name)).first() ?: return
-        val user = Json.decodeFromString<User>(userDocument.toJson())
+        val user = Json.decodeFromString<User>(playerCollection.find(Filters.eq("name",player.name)).first().toJson())
         val key = NamespacedKey(plugin,"name")
         val itemName = item.itemMeta.persistentDataContainer.get(key, PersistentDataType.STRING) as String
         val researchList: MutableList<Engine> = user.research.engine.toMutableList()

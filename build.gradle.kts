@@ -17,6 +17,9 @@ repositories {
     maven("https://oss.sonatype.org/content/groups/public/") {
         name = "sonatype"
     }
+    maven("https://repo.codemc.org/repository/maven-public/") {
+
+    }
 }
 
 dependencies {
@@ -24,9 +27,13 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
     implementation("org.reflections:reflections:0.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2") // 사용 중인 코루틴 코어 버전 예시
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactive:1.10.2") // 코어와 버전 맞추기
     implementation("org.mongodb:mongodb-driver-sync:5.3.1")
+    implementation("org.mongodb:mongodb-driver-kotlin-coroutine:4.11.1") // 최신 안정화 버전 사용 권장 (버전 확인 필요)
     implementation("org.litote.kmongo:kmongo-coroutine-serialization:5.2.0")
-
+    implementation("org.mongodb:bson-kotlin:5.1.4")
+    implementation("net.wesjd:anvilgui:1.10.5-SNAPSHOT")
 }
 
 val targetJavaVersion = 21
