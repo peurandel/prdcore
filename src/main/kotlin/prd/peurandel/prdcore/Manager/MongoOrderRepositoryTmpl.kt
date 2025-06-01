@@ -1,154 +1,441 @@
 package prd.peurandel.prdcore.Manager
-import org.litote.kmongo.coroutine.* // KMongo Coroutine Extension
-import org.litote.kmongo.eq
-import org.litote.kmongo.* // 기타 KMongo import
+import com.mongodb.client.MongoDatabase
 import com.mongodb.client.model.Filters
 import com.mongodb.client.model.Sorts
-import com.mongodb.reactivestreams.client.ClientSession // 또는 다른 드라이버의 세션 타입
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import java.util.UUID
+import org.bson.Document
+import org.bson.types.ObjectId
+import java.time.Instant
+import org.bukkit.Bukkit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 // --- OrderRepository 인터페이스 구현 ---
 class MongoOrderRepositoryImpl(
     // bazaar 데이터베이스 객체를 주입받음
-    private val database: CoroutineDatabase
+    private val database: MongoDatabase
 ) : OrderRepository {
 
     // 각 메소드에서 사용할 컬렉션을 명시적으로 지정
-    private val buyOrderCollection = database.getCollection<BuyOrder>("buy_orders")
-    private val sellOfferCollection = database.getCollection<SellOffer>("sell_offers")
+    private val buyOrderCollection = database.getCollection("buy_orders")
+    private val sellOfferCollection = database.getCollection("sell_offers")
 
     override suspend fun findActiveBuyOrdersForItem(itemId: String, limit: Int): List<BuyOrder> {
-        // 세션 파라미터 제거하고 구현
-        val filter = Filters.and(
-            BuyOrder::itemId eq itemId,
-            Filters.`in`(BuyOrder::status.name, OrderStatus.ACTIVE, OrderStatus.PARTIALLY_FILLED)
-        )
-        val sort = Sorts.orderBy(Sorts.descending(BuyOrder::pricePerUnit.name), Sorts.ascending(BuyOrder::timestampPlaced.name))
-
-        // 세션 없이 컬렉션 직접 사용
-        return buyOrderCollection.find(filter).sort(sort).limit(limit).toList()
+        return withContext(Dispatchers.IO) {
+            try {
+                Bukkit.getLogger().info("[MongoOrderRepository] 구매 주문 조회 시작: itemId=$itemId, limit=$limit")
+                
+                // Document 형식으로 조회
+                val docCollection = database.getCollection("buy_orders")
+                Bukkit.getLogger().info("[MongoOrderRepository] buy_orders 컬렉션 접근 성공")
+                
+                val filter = Filters.and(
+                    Filters.eq("itemId", itemId),
+                    Filters.`in`("status", OrderStatus.ACTIVE.name, OrderStatus.PARTIALLY_FILLED.name)
+                )
+                val sort = Sorts.orderBy(Sorts.descending("pricePerUnit"), Sorts.ascending("timestampPlaced"))
+                
+                Bukkit.getLogger().info("[MongoOrderRepository] 필터 및 정렬 설정 완료")
+                
+                val documents = docCollection.find(filter).sort(sort).limit(limit).toList()
+                Bukkit.getLogger().info("[MongoOrderRepository] 조회된 구매 주문 수: ${documents.size}")
+                
+                // Document에서 BuyOrder 객체로 수동 변환
+                val result = documents.mapIndexed { index, doc ->
+                    Bukkit.getLogger().info("[MongoOrderRepository] 구매 주문 #$index 변환 시작")
+                    try {
+                        val id = if (doc.get("_id") is ObjectId) {
+                            doc.getObjectId("_id").toString()
+                        } else {
+                            doc.getString("_id") ?: UUID.randomUUID().toString()
+                        }
+                        val playerUUID = doc.getString("playerUUID") ?: ""
+                        val docItemId = doc.getString("itemId") ?: ""
+                        val quantityOrdered = doc.getInteger("quantityOrdered", 0)
+                        val quantityFilled = doc.getInteger("quantityFilled", 0)
+                        val pricePerUnit = doc.getDouble("pricePerUnit") ?: 0.0
+                        val timestampPlaced = doc.getLong("timestampPlaced") ?: Instant.now().toEpochMilli()
+                        val statusStr = doc.getString("status") ?: OrderStatus.ACTIVE.name
+                        
+                        Bukkit.getLogger().info("[MongoOrderRepository] 구매 주문 #$index 필드 추출 완료: id=$id, itemId=$docItemId")
+                        
+                        val status = try {
+                            OrderStatus.valueOf(statusStr)
+                        } catch (e: Exception) {
+                            Bukkit.getLogger().warning("[MongoOrderRepository] 상태 변환 실패: $statusStr -> 기본값 ACTIVE 사용")
+                            OrderStatus.ACTIVE
+                        }
+                        
+                        val order = BuyOrder(
+                            id = id,
+                            playerUUID = playerUUID,
+                            itemId = docItemId,
+                            quantityOrdered = quantityOrdered,
+                            quantityFilled = quantityFilled,
+                            pricePerUnit = pricePerUnit,
+                            timestampPlaced = timestampPlaced,
+                            status = status
+                        )
+                        
+                        Bukkit.getLogger().info("[MongoOrderRepository] 구매 주문 #$index 변환 완료")
+                        order
+                    } catch (e: Exception) {
+                        Bukkit.getLogger().severe("[MongoOrderRepository] 구매 주문 #$index 변환 실패: ${e.message}")
+                        e.printStackTrace()
+                        null
+                    }
+                }.filterNotNull()
+                
+                Bukkit.getLogger().info("[MongoOrderRepository] 구매 주문 조회 완료: ${result.size}개 반환")
+                result
+            } catch (e: Exception) {
+                Bukkit.getLogger().severe("[MongoOrderRepository] 구매 주문 조회 실패: ${e.message}")
+                e.printStackTrace()
+                emptyList()
+            }
+        }
     }
 
-    // session 파라미터 제거
     override suspend fun findActiveSellOffersForItem(itemId: String, limit: Int): List<SellOffer> {
-        // 활성 상태이고, itemId가 일치하는 문서를 찾음
-        // 가격 오름차순, 시간 오름차순 정렬
-        val filter = Filters.and(
-            SellOffer::itemId eq itemId,
-            Filters.`in`(SellOffer::status.name, OrderStatus.ACTIVE, OrderStatus.PARTIALLY_FILLED)
-        )
-        val sort = Sorts.orderBy(Sorts.ascending(SellOffer::pricePerUnit.name), Sorts.ascending(SellOffer::timestampPlaced.name))
-
-        // session 관련 분기 제거, 직접 컬렉션 사용
-        return sellOfferCollection.find(filter).sort(sort).limit(limit).toList()
+        return withContext(Dispatchers.IO) {
+            try {
+                Bukkit.getLogger().info("[MongoOrderRepository] 판매 제안 조회 시작: itemId=$itemId, limit=$limit")
+                
+                // Document 형식으로 조회
+                val docCollection = database.getCollection("sell_offers")
+                Bukkit.getLogger().info("[MongoOrderRepository] sell_offers 컬렉션 접근 성공")
+                
+                val filter = Filters.and(
+                    Filters.eq("itemId", itemId),
+                    Filters.`in`("status", OrderStatus.ACTIVE.name, OrderStatus.PARTIALLY_FILLED.name)
+                )
+                val sort = Sorts.orderBy(Sorts.ascending("pricePerUnit"), Sorts.ascending("timestampPlaced"))
+                
+                Bukkit.getLogger().info("[MongoOrderRepository] 필터 및 정렬 설정 완료")
+                
+                val documents = docCollection.find(filter).sort(sort).limit(limit).toList()
+                Bukkit.getLogger().info("[MongoOrderRepository] 조회된 판매 제안 수: ${documents.size}")
+                
+                // Document에서 SellOffer 객체로 수동 변환
+                val result = documents.mapIndexed { index, doc ->
+                    Bukkit.getLogger().info("[MongoOrderRepository] 판매 제안 #$index 변환 시작")
+                    try {
+                        val id = if (doc.get("_id") is ObjectId) {
+                            doc.getObjectId("_id").toString()
+                        } else {
+                            doc.getString("_id") ?: UUID.randomUUID().toString()
+                        }
+                        val playerUUID = doc.getString("playerUUID") ?: ""
+                        val docItemId = doc.getString("itemId") ?: ""
+                        val quantityOffered = doc.getInteger("quantityOffered", 0)
+                        val quantitySold = doc.getInteger("quantitySold", 0)
+                        val pricePerUnit = doc.getDouble("pricePerUnit") ?: 0.0
+                        val timestampPlaced = doc.getLong("timestampPlaced") ?: Instant.now().toEpochMilli()
+                        val statusStr = doc.getString("status") ?: OrderStatus.ACTIVE.name
+                        
+                        Bukkit.getLogger().info("[MongoOrderRepository] 판매 제안 #$index 필드 추출 완료: id=$id, itemId=$docItemId")
+                        
+                        val status = try {
+                            OrderStatus.valueOf(statusStr)
+                        } catch (e: Exception) {
+                            Bukkit.getLogger().warning("[MongoOrderRepository] 상태 변환 실패: $statusStr -> 기본값 ACTIVE 사용")
+                            OrderStatus.ACTIVE
+                        }
+                        
+                        val offer = SellOffer(
+                            id = id,
+                            playerUUID = playerUUID,
+                            itemId = docItemId,
+                            quantityOffered = quantityOffered,
+                            quantitySold = quantitySold,
+                            pricePerUnit = pricePerUnit,
+                            timestampPlaced = timestampPlaced,
+                            status = status
+                        )
+                        
+                        Bukkit.getLogger().info("[MongoOrderRepository] 판매 제안 #$index 변환 완료")
+                        offer
+                    } catch (e: Exception) {
+                        Bukkit.getLogger().severe("[MongoOrderRepository] 판매 제안 #$index 변환 실패: ${e.message}")
+                        e.printStackTrace()
+                        null
+                    }
+                }.filterNotNull()
+                
+                Bukkit.getLogger().info("[MongoOrderRepository] 판매 제안 조회 완료: ${result.size}개 반환")
+                result
+            } catch (e: Exception) {
+                Bukkit.getLogger().severe("[MongoOrderRepository] 판매 제안 조회 실패: ${e.message}")
+                e.printStackTrace()
+                emptyList()
+            }
+        }
     }
 
-    // session 파라미터 제거
     override suspend fun findBuyOrderById(orderId: String): BuyOrder? {
-        // session 관련 분기 제거, 직접 컬렉션 사용
-        return buyOrderCollection.findOneById(orderId)
+        return withContext(Dispatchers.IO) {
+            try {
+                val filter = Filters.eq("_id", orderId)
+                val doc = buyOrderCollection.find(filter).firstOrNull()
+                if (doc != null) {
+                    val id = if (doc.get("_id") is ObjectId) {
+                        doc.getObjectId("_id").toString()
+                    } else {
+                        doc.getString("_id") ?: UUID.randomUUID().toString()
+                    }
+                    val playerUUID = doc.getString("playerUUID") ?: ""
+                    val docItemId = doc.getString("itemId") ?: ""
+                    val quantityOrdered = doc.getInteger("quantityOrdered", 0)
+                    val quantityFilled = doc.getInteger("quantityFilled", 0)
+                    val pricePerUnit = doc.getDouble("pricePerUnit") ?: 0.0
+                    val timestampPlaced = doc.getLong("timestampPlaced") ?: Instant.now().toEpochMilli()
+                    val statusStr = doc.getString("status") ?: OrderStatus.ACTIVE.name
+                    
+                    val status = try {
+                        OrderStatus.valueOf(statusStr)
+                    } catch (e: Exception) {
+                        Bukkit.getLogger().warning("[MongoOrderRepository] 상태 변환 실패: $statusStr -> 기본값 ACTIVE 사용")
+                        OrderStatus.ACTIVE
+                    }
+                    
+                    return@withContext BuyOrder(
+                        id = id,
+                        playerUUID = playerUUID,
+                        itemId = docItemId,
+                        quantityOrdered = quantityOrdered,
+                        quantityFilled = quantityFilled,
+                        pricePerUnit = pricePerUnit,
+                        timestampPlaced = timestampPlaced,
+                        status = status
+                    )
+                }
+                return@withContext null
+            } catch (e: Exception) {
+                Bukkit.getLogger().severe("[MongoOrderRepository] 구매 주문 조회 실패: ${e.message}")
+                e.printStackTrace()
+                return@withContext null
+            }
+        }
     }
 
-    // session 파라미터 제거
     override suspend fun findSellOfferById(orderId: String): SellOffer? {
-        // session 관련 분기 제거, 직접 컬렉션 사용
-        return sellOfferCollection.findOneById(orderId)
+        return withContext(Dispatchers.IO) {
+            try {
+                val filter = Filters.eq("_id", orderId)
+                val doc = sellOfferCollection.find(filter).firstOrNull()
+                if (doc != null) {
+                    val id = if (doc.get("_id") is ObjectId) {
+                        doc.getObjectId("_id").toString()
+                    } else {
+                        doc.getString("_id") ?: UUID.randomUUID().toString()
+                    }
+                    val playerUUID = doc.getString("playerUUID") ?: ""
+                    val docItemId = doc.getString("itemId") ?: ""
+                    val quantityOffered = doc.getInteger("quantityOffered", 0)
+                    val quantitySold = doc.getInteger("quantitySold", 0)
+                    val pricePerUnit = doc.getDouble("pricePerUnit") ?: 0.0
+                    val timestampPlaced = doc.getLong("timestampPlaced") ?: Instant.now().toEpochMilli()
+                    val statusStr = doc.getString("status") ?: OrderStatus.ACTIVE.name
+                    
+                    val status = try {
+                        OrderStatus.valueOf(statusStr)
+                    } catch (e: Exception) {
+                        Bukkit.getLogger().warning("[MongoOrderRepository] 상태 변환 실패: $statusStr -> 기본값 ACTIVE 사용")
+                        OrderStatus.ACTIVE
+                    }
+                    
+                    SellOffer(
+                        id = id,
+                        playerUUID = playerUUID,
+                        itemId = docItemId,
+                        quantityOffered = quantityOffered,
+                        quantitySold = quantitySold,
+                        pricePerUnit = pricePerUnit,
+                        timestampPlaced = timestampPlaced,
+                        status = status
+                    )
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                Bukkit.getLogger().severe("[MongoOrderRepository] 판매 제안 조회 실패: ${e.message}")
+                e.printStackTrace()
+                null
+            }
+        }
     }
 
     override suspend fun findActiveOrdersByPlayer(playerUUID: String): List<Pair<BuyOrder?, SellOffer?>> {
-        // CoroutineScope를 사용하여 두 컬렉션 조회를 병렬로 실행 (성능 향상)
-        return coroutineScope {
-            // 1. 해당 플레이어의 활성 구매 주문 조회 (비동기)
-            val buyOrdersDeferred = async {
-                val filter = Filters.and(
-                    BuyOrder::playerUUID eq playerUUID, // 플레이어 UUID 일치
-                    Filters.`in`(BuyOrder::status.name, OrderStatus.ACTIVE, OrderStatus.PARTIALLY_FILLED) // 활성 상태
-                )
-                // buyOrderCollection 사용 (클래스 내부에 선언된 변수)
-                buyOrderCollection.find(filter).toList()
+        return withContext(Dispatchers.IO) {
+            try {
+                val buyOrders = buyOrderCollection.find(Filters.eq("playerUUID", playerUUID)).toList()
+                val sellOffers = sellOfferCollection.find(Filters.eq("playerUUID", playerUUID)).toList()
+                
+                val result = mutableListOf<Pair<BuyOrder?, SellOffer?>>()
+                buyOrders.forEach { doc ->
+                    val id = if (doc.get("_id") is ObjectId) {
+                        doc.getObjectId("_id").toString()
+                    } else {
+                        doc.getString("_id") ?: UUID.randomUUID().toString()
+                    }
+                    val playerUUID = doc.getString("playerUUID") ?: ""
+                    val docItemId = doc.getString("itemId") ?: ""
+                    val quantityOrdered = doc.getInteger("quantityOrdered", 0)
+                    val quantityFilled = doc.getInteger("quantityFilled", 0)
+                    val pricePerUnit = doc.getDouble("pricePerUnit") ?: 0.0
+                    val timestampPlaced = doc.getLong("timestampPlaced") ?: Instant.now().toEpochMilli()
+                    val statusStr = doc.getString("status") ?: OrderStatus.ACTIVE.name
+                    
+                    val status = try {
+                        OrderStatus.valueOf(statusStr)
+                    } catch (e: Exception) {
+                        Bukkit.getLogger().warning("[MongoOrderRepository] 상태 변환 실패: $statusStr -> 기본값 ACTIVE 사용")
+                        OrderStatus.ACTIVE
+                    }
+                    
+                    result.add(Pair(
+                        BuyOrder(
+                            id = id,
+                            playerUUID = playerUUID,
+                            itemId = docItemId,
+                            quantityOrdered = quantityOrdered,
+                            quantityFilled = quantityFilled,
+                            pricePerUnit = pricePerUnit,
+                            timestampPlaced = timestampPlaced,
+                            status = status
+                        ),
+                        null
+                    ))
+                }
+                sellOffers.forEach { doc ->
+                    val id = if (doc.get("_id") is ObjectId) {
+                        doc.getObjectId("_id").toString()
+                    } else {
+                        doc.getString("_id") ?: UUID.randomUUID().toString()
+                    }
+                    val playerUUID = doc.getString("playerUUID") ?: ""
+                    val docItemId = doc.getString("itemId") ?: ""
+                    val quantityOffered = doc.getInteger("quantityOffered", 0)
+                    val quantitySold = doc.getInteger("quantitySold", 0)
+                    val pricePerUnit = doc.getDouble("pricePerUnit") ?: 0.0
+                    val timestampPlaced = doc.getLong("timestampPlaced") ?: Instant.now().toEpochMilli()
+                    val statusStr = doc.getString("status") ?: OrderStatus.ACTIVE.name
+                    
+                    val status = try {
+                        OrderStatus.valueOf(statusStr)
+                    } catch (e: Exception) {
+                        Bukkit.getLogger().warning("[MongoOrderRepository] 상태 변환 실패: $statusStr -> 기본값 ACTIVE 사용")
+                        OrderStatus.ACTIVE
+                    }
+                    
+                    result.add(Pair(
+                        null,
+                        SellOffer(
+                            id = id,
+                            playerUUID = playerUUID,
+                            itemId = docItemId,
+                            quantityOffered = quantityOffered,
+                            quantitySold = quantitySold,
+                            pricePerUnit = pricePerUnit,
+                            timestampPlaced = timestampPlaced,
+                            status = status
+                        )
+                    ))
+                }
+                result
+            } catch (e: Exception) {
+                Bukkit.getLogger().severe("[MongoOrderRepository] 활성 주문 조회 실패: ${e.message}")
+                e.printStackTrace()
+                emptyList()
             }
+        }
+    }
 
-            // 2. 해당 플레이어의 활성 판매 제안 조회 (비동기)
-            val sellOffersDeferred = async {
-                val filter = Filters.and(
-                    SellOffer::playerUUID eq playerUUID, // 플레이어 UUID 일치
-                    Filters.`in`(SellOffer::status.name, OrderStatus.ACTIVE, OrderStatus.PARTIALLY_FILLED) // 활성 상태
-                )
-                // sellOfferCollection 사용 (클래스 내부에 선언된 변수)
-                sellOfferCollection.find(filter).toList()
-            }
-
-            // 3. 두 비동기 작업이 완료될 때까지 기다림
-            val buyOrders = buyOrdersDeferred.await()
-            val sellOffers = sellOffersDeferred.await()
-
-            // 4. 조회된 결과를 List<Pair<BuyOrder?, SellOffer?>> 형태로 조합
-            val combinedList = mutableListOf<Pair<BuyOrder?, SellOffer?>>()
-            buyOrders.forEach { buyOrder ->
-                combinedList.add(Pair(buyOrder, null)) // 구매 주문은 첫 번째 요소, 판매 제안은 null
-            }
-            sellOffers.forEach { sellOffer ->
-                combinedList.add(Pair(null, sellOffer)) // 구매 주문은 null, 판매 제안은 두 번째 요소
-            }
-
-            // 5. (선택) 필요하다면 리스트를 정렬 (예: 최신 주문/제안 순)
-            combinedList.sortByDescending {
-                // Pair의 첫 번째(BuyOrder) 또는 두 번째(SellOffer) 요소의 timestamp를 기준으로 정렬
-                (it.first?.timestampPlaced ?: it.second?.timestampPlaced)
-            }
-
-            // 6. 조합된 리스트 반환
-            combinedList
-        } // coroutineScope 종료
-    } // findActiveOrdersByPlayer 메소드 종료
-    // session 파라미터 제거
     override suspend fun saveBuyOrder(order: BuyOrder): Boolean {
-        return try {
-            // session 관련 분기 제거, 직접 컬렉션 사용
-            buyOrderCollection.insertOne(order).wasAcknowledged()
-        } catch (e: Exception) {
-            println("Error saving BuyOrder: ${e.message}") // 오류 로깅 추가 권장
-            false
+        return withContext(Dispatchers.IO) {
+            try {
+                val doc = Document("_id", order.id)
+                    .append("playerUUID", order.playerUUID)
+                    .append("itemId", order.itemId)
+                    .append("quantityOrdered", order.quantityOrdered)
+                    .append("quantityFilled", order.quantityFilled)
+                    .append("pricePerUnit", order.pricePerUnit)
+                    .append("timestampPlaced", order.timestampPlaced)
+                    .append("status", order.status.name)
+                buyOrderCollection.insertOne(doc)
+                true
+            } catch (e: Exception) {
+                Bukkit.getLogger().severe("[MongoOrderRepository] 구매 주문 저장 실패: ${e.message}")
+                e.printStackTrace()
+                false
+            }
         }
     }
 
-    // session 파라미터 제거
     override suspend fun saveSellOffer(offer: SellOffer): Boolean {
-        return try {
-            // session 관련 분기 제거, 직접 컬렉션 사용
-            sellOfferCollection.insertOne(offer).wasAcknowledged()
-        } catch (e: Exception) {
-            println("Error saving SellOffer: ${e.message}") // 오류 로깅 추가 권장
-            false
+        return withContext(Dispatchers.IO) {
+            try {
+                val doc = Document("_id", offer.id)
+                    .append("playerUUID", offer.playerUUID)
+                    .append("itemId", offer.itemId)
+                    .append("quantityOffered", offer.quantityOffered)
+                    .append("quantitySold", offer.quantitySold)
+                    .append("pricePerUnit", offer.pricePerUnit)
+                    .append("timestampPlaced", offer.timestampPlaced)
+                    .append("status", offer.status.name)
+                sellOfferCollection.insertOne(doc)
+                true
+            } catch (e: Exception) {
+                Bukkit.getLogger().severe("[MongoOrderRepository] 판매 제안 저장 실패: ${e.message}")
+                e.printStackTrace()
+                false
+            }
         }
     }
 
-    // session 파라미터 제거
     override suspend fun updateBuyOrder(order: BuyOrder): Boolean {
-        return try {
-            val filter = BuyOrder::id eq order.id
-            // session 관련 분기 제거, 직접 컬렉션 사용
-            buyOrderCollection.replaceOne(filter, order).modifiedCount == 1L
-        } catch (e: Exception) {
-            println("Error updating BuyOrder: ${e.message}") // 오류 로깅 추가 권장
-            false
+        return withContext(Dispatchers.IO) {
+            try {
+                val filter = Filters.eq("_id", order.id)
+                val doc = Document("_id", order.id)
+                    .append("playerUUID", order.playerUUID)
+                    .append("itemId", order.itemId)
+                    .append("quantityOrdered", order.quantityOrdered)
+                    .append("quantityFilled", order.quantityFilled)
+                    .append("pricePerUnit", order.pricePerUnit)
+                    .append("timestampPlaced", order.timestampPlaced)
+                    .append("status", order.status.name)
+                buyOrderCollection.replaceOne(filter, doc)
+                true
+            } catch (e: Exception) {
+                Bukkit.getLogger().severe("[MongoOrderRepository] 구매 주문 업데이트 실패: ${e.message}")
+                e.printStackTrace()
+                false
+            }
         }
     }
 
-    // session 파라미터 제거
     override suspend fun updateSellOffer(offer: SellOffer): Boolean {
-        return try {
-            val filter = SellOffer::id eq offer.id
-            // session 관련 분기 제거, 직접 컬렉션 사용
-            sellOfferCollection.replaceOne(filter, offer).modifiedCount == 1L
-        } catch (e: Exception) {
-            println("Error updating SellOffer: ${e.message}") // 오류 로깅 추가 권장
-            false
+        return withContext(Dispatchers.IO) {
+            try {
+                val filter = Filters.eq("_id", offer.id)
+                val doc = Document("_id", offer.id)
+                    .append("playerUUID", offer.playerUUID)
+                    .append("itemId", offer.itemId)
+                    .append("quantityOffered", offer.quantityOffered)
+                    .append("quantitySold", offer.quantitySold)
+                    .append("pricePerUnit", offer.pricePerUnit)
+                    .append("timestampPlaced", offer.timestampPlaced)
+                    .append("status", offer.status.name)
+                sellOfferCollection.replaceOne(filter, doc)
+                true
+            } catch (e: Exception) {
+                Bukkit.getLogger().severe("[MongoOrderRepository] 판매 제안 업데이트 실패: ${e.message}")
+                e.printStackTrace()
+                false
+            }
         }
     }
 }
-
-// --- 다른 Repository 구현 (MongoCategoryRepositoryImpl, MongoProductRepositoryImpl 등)도 유사하게 작성 ---
-// 각 구현체는 database.getCollection<해당 데이터 클래스>("해당 컬렉션 이름") 을 사용

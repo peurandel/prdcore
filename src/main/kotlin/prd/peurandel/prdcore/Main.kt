@@ -2,11 +2,11 @@ package prd.peurandel.prdcore
 
 import com.mongodb.ConnectionString
 import com.mongodb.MongoClientSettings
+import com.mongodb.client.MongoClients
 import com.mongodb.client.MongoDatabase
 import com.mongodb.client.model.Filters
-import com.mongodb.reactivestreams.client.MongoClient
-import com.mongodb.reactivestreams.client.MongoClients
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.Json
 import org.bson.Document
 import org.bukkit.Bukkit
@@ -14,11 +14,6 @@ import org.bukkit.NamespacedKey
 import org.bukkit.configuration.ConfigurationSection
 import org.bukkit.entity.Player
 import org.bukkit.persistence.PersistentDataType
-import org.litote.kmongo.coroutine.CoroutineClient
-import org.litote.kmongo.coroutine.CoroutineDatabase
-import org.litote.kmongo.coroutine.coroutine
-import org.litote.kmongo.reactivestreams.KMongo
-
 import org.bukkit.plugin.java.JavaPlugin
 import prd.peurandel.prdcore.Commands.PRDCommand
 import prd.peurandel.prdcore.Commands.SuitCommand
@@ -34,33 +29,33 @@ import prd.peurandel.prdcore.Manager.DatabaseManager
 import prd.peurandel.prdcore.Manager.EconomyService
 import prd.peurandel.prdcore.Manager.InventoryService
 import prd.peurandel.prdcore.Manager.*
+import prd.peurandel.prdcore.Manager.BazaarAPIImpl
+import prd.peurandel.prdcore.Manager.DummyBazaarCoreServiceImpl
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 import java.util.logging.Logger
-
 
 class Main : JavaPlugin() {
 
-    private lateinit var mongoDBManager : MongoDBManager    //private lateinit var configManager: ConfigManager
+    lateinit var mongoDBManager : MongoDBManager    //private lateinit var configManager: ConfigManager
     val json = Json {
         ignoreUnknownKeys = true
         coerceInputValues = true
     }
     private lateinit var messageConfigManager: MessageConfigManager // MessageConfigManager 인스턴스
     lateinit var sidebarManager: SidebarManager
-    
+
     // 트랜잭션 지원을 위한 MongoClient와 관련 객체들
-    private lateinit var mongoClient: MongoClient
-    private lateinit var coroutineClient: CoroutineClient
-    private lateinit var bazaarCoroutineDB: CoroutineDatabase
+    private lateinit var mongoClient: com.mongodb.client.MongoClient
     private lateinit var databaseManager: DatabaseManager
-    
+
     // BazaarAPI 접근을 위한 속성 추가
     private lateinit var bazaarAPI: BazaarAPI
-    
+
     companion object {
         lateinit var configManager: ConfigManager
             private set // 외부에서 직접 설정하는 것을 방지
-        
+
         // 다른 클래스에서 BazaarAPI 접근 가능하도록 설정
         private var instance: Main? = null
         fun getInstance(): Main = instance!!
@@ -71,7 +66,7 @@ class Main : JavaPlugin() {
     override fun onEnable() {
         // 싱글톤 인스턴스 설정
         instance = this
-        
+
         configManager = ConfigManager(this)
         loadItemConfig()
         loadPluginSettings()
@@ -84,136 +79,137 @@ class Main : JavaPlugin() {
         try {
             // 1. MongoClient와 CoroutineClient 설정
             val connectionString = ConnectionString("mongodb://localhost:27017")
-            val settings = MongoClientSettings.builder()
+
+            // MongoDB 클라이언트 설정
+            val mongoClientSettings = MongoClientSettings.builder()
                 .applyConnectionString(connectionString)
                 .build()
-            
-            logger.info("[디버깅] MongoDB 연결 설정 생성됨: $connectionString")
-            
-            mongoClient = MongoClients.create(settings)
+
+            // MongoDB 클라이언트 생성
+            mongoClient = MongoClients.create(mongoClientSettings)
             logger.info("[디버깅] MongoDB 클라이언트 생성됨")
-            
+
             try {
-                coroutineClient = mongoClient.coroutine
-                logger.info("[디버깅] MongoDB 코루틴 클라이언트 생성됨")
-                
                 // Bazaar 데이터베이스 생성
-                bazaarCoroutineDB = coroutineClient.getDatabase("bazaar")
+                val bazaarDatabase = mongoClient.getDatabase("bazaar")
                 logger.info("[디버깅] bazaar 데이터베이스 접근됨")
-                
+
                 // 컬렉션 존재 여부 확인
                 pluginScope.launch {
                     try {
-                        val collections = bazaarCoroutineDB.listCollectionNames().toList()
+                        val collections = bazaarDatabase.listCollectionNames().toList()
                         logger.info("[디버깅] 컬렉션 목록: $collections")
-                        
+
                         // products 컬렉션에서 다이아몬드 정보 조회 시도
-                        val productCollection = bazaarCoroutineDB.getCollection<Product>("products")
-                        val diamond = productCollection.findOneById("diamond")
+                        val productCollection = bazaarDatabase.getCollection("products")
+                        val diamond = productCollection.find(com.mongodb.client.model.Filters.eq("_id", "DIAMOND")).first()
                         logger.info("[디버깅] 다이아몬드 정보 조회 결과: ${diamond != null}, 데이터: $diamond")
-                        
+
                         // 리포지토리를 통한 조회 테스트
-                        val productRepo = MongoProductRepositoryImpl(bazaarCoroutineDB,logger,pluginScope)
-                        val diamondFromRepo = productRepo.findById("diamond")
+                        val productRepo = MongoProductRepositoryImpl(bazaarDatabase, logger, pluginScope)
+                        val diamondFromRepo = productRepo.findById("DIAMOND")
                         logger.info("[디버깅] 리포지토리 다이아몬드 조회 결과: ${diamondFromRepo != null}, 데이터: $diamondFromRepo")
-                        
+
                     } catch (e: Exception) {
                         logger.severe("[디버깅] 데이터베이스 조회 오류: ${e.message}")
                         e.printStackTrace()
                     }
                 }
+
+                // 2. 기존 DB 연결 (이전 코드와 호환성 유지)
+                val log_database = mongoDBManager.connectToDataBase("logs")
+
+                // 3. 트랜잭션 관리자 구현체 생성
+                databaseManager = MongoDatabaseManagerImpl(mongoClient, bazaarDatabase, logger)
+
+
+                // --- Repository 구현체 생성 ---
+                val categoryRepo = MongoCategoryRepositoryImpl(bazaarDatabase)
+                val productRepo = MongoProductRepositoryImpl(bazaarDatabase, logger, pluginScope)
+                val orderRepo = MongoOrderRepositoryImpl(bazaarDatabase)
+                val transactionRepo = MongoTransactionRepositoryImpl(bazaarDatabase, logger)
+
+                // --- 서비스 구현체 생성 ---
+                val inventoryService = InventoryServiceImpl(this)
+                val economyService = EconomyServiceImpl(this)
+
+                // --- BazaarAPI 생성 ---
+                val bazaarCoreService = DummyBazaarCoreServiceImpl(
+                    orderRepo,
+                    transactionRepo,
+                    economyService,
+                    inventoryService
+                )
+                
+                bazaarAPI = BazaarAPIImpl(
+                    categoryRepo,
+                    productRepo,
+                    orderRepo,
+                    transactionRepo,
+                    economyService,
+                    inventoryService,
+                    bazaarCoreService,
+                    databaseManager
+                )
+
+                // 테스트 데이터 생성
+                createDocsForTest(bazaarDatabase)
+                val database: MongoDatabase = mongoDBManager.connectToDataBase("server")
+
+                // GUI 등록
+                val handler = InventoryClickHandler()
+                registerGUIs(handler, bazaarDatabase)
+
+                // 이벤트 리스너 등록
+                server.pluginManager.registerEvents(handler, this)
+
+                // 명령어 등록
+                getCommand("prd")?.setExecutor(PRDCommand(this,database,bazaarAPI))
+                getCommand("suit")?.setExecutor(SuitCommand(this,database))
+                getCommand("suit")?.tabCompleter = SuitTabCompleter()
+
+                logger.info("PRD Core 플러그인이 활성화되었습니다.")
             } catch (e: Exception) {
-                logger.severe("[디버깅] MongoDB 코루틴 클라이언트 생성 중 오류: ${e.message}")
+                logger.severe("[디버깅] MongoDB 클라이언트 생성 중 오류: ${e.message}")
                 e.printStackTrace()
             }
-            
-            // 2. 기존 DB 연결 (이전 코드와 호환성 유지)
-            val log_database = mongoDBManager.connectToDataBase("logs")
-            
-            // 3. KMongo 기반 Coroutine Database 객체 생성 (트랜잭션 지원)
-            bazaarCoroutineDB = coroutineClient.getDatabase("bazaar")
-            
-            // 4. 트랜잭션 관리자 구현체 생성
-            databaseManager = MongoDatabaseManagerImpl(coroutineClient, bazaarCoroutineDB, logger)
+
+            val database: MongoDatabase = mongoDBManager.connectToDataBase("server")
+            sidebarManager = SidebarManager(database)
+
+            logger.info("플러그인이 활성화되었습니다.")
+
+            //Keep the comments in front the code when the Docs are already created
+            //createDocsForTest(database)
+
+            // 이벤트 리스너 등록
+            val inventoryClickHandler = InventoryClickHandler()
+            server.pluginManager.registerEvents(inventoryClickHandler, this)
+            server.pluginManager.registerEvents(PlayerJoinHandler(database,this), this)
+            server.pluginManager.registerEvents(DamageHandler(), this)
+            server.pluginManager.registerEvents(SneakHandler(this,database), this)
+            server.pluginManager.registerEvents(playerInteractHandler(this,database), this)
+            server.pluginManager.registerEvents(PlayerHandler(), this)
 
 
-            // --- Repository 구현체 생성 ---
-            val categoryRepo = MongoCategoryRepositoryImpl(bazaarCoroutineDB)
-            val productRepo = MongoProductRepositoryImpl(bazaarCoroutineDB,logger,pluginScope)
-            val orderRepo = MongoOrderRepositoryImpl(bazaarCoroutineDB)
-            val transactionRepo = MongoTransactionRepositoryImpl(bazaarCoroutineDB, logger)
-            
-            // 임시 구현체 생성 (플러그인 완성시 실제 구현체로 대체)
-            // 간소화된 임시 서비스 구현
-            val economyService = object : EconomyService {
-                override suspend fun hasEnoughFunds(playerUUID: UUID, amount: Double): Boolean = true
-                override suspend fun withdraw(playerUUID: UUID, amount: Double): Boolean = true  
-                override suspend fun deposit(playerUUID: UUID, amount: Double): Boolean = true
+            setPlayerSet(database)
+            // GUI 등록
+            registerGUIs(inventoryClickHandler,database)
+
+            getCommand("suit")?.apply {
+                setExecutor(SuitCommand(this@Main,database))
+                setTabCompleter(SuitTabCompleter())
             }
-            
-            val inventoryService = object : InventoryService {
-                override suspend fun hasItems(playerUUID: UUID, itemId: String, quantity: Int): Boolean = true
-                override suspend fun removeItems(playerUUID: UUID, itemId: String, quantity: Int): Boolean = true
-                override suspend fun addItems(playerUUID: UUID, itemId: String, quantity: Int): Boolean = true
+            getCommand("prd")?.apply {
+                setExecutor(PRDCommand(this@Main,database,getBazaarAPI() ))
+                setTabCompleter(PRDCommand(this@Main,database,getBazaarAPI()))
             }
-            
-            // BazaarCoreService 임시 구현체 생성
-            val bazaarCoreService = DummyBazaarCoreServiceImpl(
-                orderRepository = orderRepo,
-                transactionRepository = transactionRepo,
-                economyService = economyService,
-                inventoryService = inventoryService
-            )
-            
-            // --- BazaarAPI 초기화 --- 
-            bazaarAPI = BazaarAPIImpl(
-                categoryRepository = categoryRepo,
-                productRepository = productRepo,
-                orderRepository = orderRepo,
-                transactionRepository = transactionRepo,
-                economyService = economyService,
-                inventoryService = inventoryService,
-                bazaarCoreService = bazaarCoreService,
-                databaseManager = databaseManager
-            )
-            
-            logger.info("[Bazaar] 초기화 완료: MongoDB 트랜잭션 지원 활성화됨")
+
+            startPlayerTask(this,database)
         } catch (e: Exception) {
             logger.severe("[Bazaar] 초기화 실패: ${e.message}")
             e.printStackTrace()
         }
-        val database: MongoDatabase = mongoDBManager.connectToDataBase("server")
-        sidebarManager = SidebarManager(database)
-
-        logger.info("플러그인이 활성화되었습니다.")
-
-        //Keep the comments in front the code when the Docs are already created
-        //createDocsForTest(database)
-
-        // 이벤트 리스너 등록
-        val inventoryClickHandler = InventoryClickHandler()
-        server.pluginManager.registerEvents(inventoryClickHandler, this)
-        server.pluginManager.registerEvents(PlayerJoinHandler(database,this), this)
-        server.pluginManager.registerEvents(DamageHandler(), this)
-        server.pluginManager.registerEvents(SneakHandler(this,database), this)
-        server.pluginManager.registerEvents(playerInteractHandler(this,database), this)
-        server.pluginManager.registerEvents(PlayerHandler(), this)
-
-
-        setPlayerSet(database)
-        // GUI 등록
-        registerGUIs(inventoryClickHandler,database)
-
-        getCommand("suit")?.apply {
-            setExecutor(SuitCommand(this@Main,database))
-            setTabCompleter(SuitTabCompleter())
-        }
-        getCommand("prd")?.apply {
-            setExecutor(PRDCommand(this@Main,database,getBazaarAPI() ))
-            setTabCompleter(PRDCommand(this@Main,database,getBazaarAPI()))
-        }
-
-        startPlayerTask(this,database)
     }
 
     // BazaarAPI 접근 메소드
@@ -225,9 +221,8 @@ class Main : JavaPlugin() {
         // Plugin shutdown logic
         try {
             // MongoDB 클라이언트 종료
-            coroutineClient.close()
             mongoClient.close()
-            
+
             logger.info("[Bazaar] MongoDB 연결 종료됨")
         } catch (e: Exception) {
             logger.warning("[Bazaar] MongoDB 연결 종료 중 오류: ${e.message}")
@@ -314,7 +309,7 @@ class Main : JavaPlugin() {
         val suitManager = SuitManager(this,database)
 
         for(player in Bukkit.getOnlinePlayers()) {
-            val playerDoc = userCollection.find(Filters.eq("uuid",player.uniqueId.toString())).first()
+            val playerDoc = userCollection.find(com.mongodb.client.model.Filters.eq("uuid",player.uniqueId.toString())).first()
             val user: User = json.decodeFromString(playerDoc!!.toJson())
 
             val userData = mutableMapOf<String, Any?>().apply{

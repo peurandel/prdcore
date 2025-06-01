@@ -1,5 +1,5 @@
 package prd.peurandel.prdcore.Manager
-import com.mongodb.reactivestreams.client.ClientSession
+import com.mongodb.client.ClientSession
 import java.util.UUID
 import java.time.Instant
 // kotlinx-coroutines-core 의존성이 필요합니다.
@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 
+@Serializable
 enum class OrderStatus {
     ACTIVE,
     PARTIALLY_FILLED,
@@ -18,6 +19,7 @@ enum class OrderStatus {
     CANCELLED
 }
 
+@Serializable
 enum class OrderType {
     BUY, SELL
 }
@@ -33,48 +35,135 @@ data class Category(
 @Serializable
 data class Product(
     @SerialName("_id")
-    val _id: String, // 예: "DIAMOND", "ENCHANTED_LAPIS_BLOCK"
+    val id: String, // 예: "DIAMOND", "ENCHANTED_LAPIS_BLOCK"
     val name: String, // 예: "다이아몬드"
     val categoryId: String,
     val description: String? = null,
     val isTradable: Boolean = true,
     // 마인크래프트 아이템 메타데이터 등 추가 정보 포함 가능
     val itemMeta: String? = null // 예: JSON 형태의 NBT 데이터
-)
+) {
+    // MongoDB 호환성을 위한 보조 생성자
+    // 모든 필드를 nullable로 처리하여 MongoDB에서 역직렬화 시 문제가 없도록 함
+    @Suppress("UNUSED")
+    constructor() : this(
+        id = "",  // 빈 문자열 대신 null을 사용하면 안됨 (id는 non-null 타입)
+        name = "",
+        categoryId = "",
+        description = null,
+        isTradable = true,
+        itemMeta = null
+    )
+}
 
+@Serializable
 data class BuyOrder(
-    val id: String = UUID.randomUUID().toString(), // 고유 ID 자동 생성
-    val playerUUID: String,
+    @SerialName("_id")
+    val id: String = UUID.randomUUID().toString(),
+    @SerialName("playerUUID")
+    val playerUUID: String, // 플레이어 UUID (String으로 저장)
     val itemId: String,
     val quantityOrdered: Int,
     var quantityFilled: Int = 0,
     val pricePerUnit: Double,
-    val timestampPlaced: Instant = Instant.now(),
+    val timestampPlaced: Long = Instant.now().toEpochMilli(),
     var status: OrderStatus = OrderStatus.ACTIVE
-)
+) {
+    // UUID 객체를 받아 String으로 변환하는 보조 생성자
+    constructor(
+        id: UUID = UUID.randomUUID(),
+        playerUUID: UUID,
+        itemId: String,
+        quantityOrdered: Int,
+        quantityFilled: Int = 0,
+        pricePerUnit: Double,
+        timestampPlaced: Long = Instant.now().toEpochMilli(),
+        status: OrderStatus = OrderStatus.ACTIVE
+    ) : this(
+        id = id.toString(),
+        playerUUID = playerUUID.toString(),
+        itemId = itemId,
+        quantityOrdered = quantityOrdered,
+        quantityFilled = quantityFilled,
+        pricePerUnit = pricePerUnit,
+        timestampPlaced = timestampPlaced,
+        status = status
+    )
+}
 
+@Serializable
 data class SellOffer(
-    val id: String = UUID.randomUUID().toString(), // 고유 ID 자동 생성
-    val playerUUID: String,
+    @SerialName("_id")
+    val id: String = UUID.randomUUID().toString(),
+    @SerialName("playerUUID")
+    val playerUUID: String, // 플레이어 UUID (String으로 저장)
     val itemId: String,
     val quantityOffered: Int,
     var quantitySold: Int = 0,
     val pricePerUnit: Double,
-    val timestampPlaced: Instant = Instant.now(),
+    val timestampPlaced: Long = Instant.now().toEpochMilli(),
     var status: OrderStatus = OrderStatus.ACTIVE
-)
+) {
+    // UUID 객체를 받아 String으로 변환하는 보조 생성자
+    constructor(
+        id: UUID = UUID.randomUUID(),
+        playerUUID: UUID,
+        itemId: String,
+        quantityOffered: Int,
+        quantitySold: Int = 0,
+        pricePerUnit: Double,
+        timestampPlaced: Long = Instant.now().toEpochMilli(),
+        status: OrderStatus = OrderStatus.ACTIVE
+    ) : this(
+        id = id.toString(),
+        playerUUID = playerUUID.toString(),
+        itemId = itemId,
+        quantityOffered = quantityOffered,
+        quantitySold = quantitySold,
+        pricePerUnit = pricePerUnit,
+        timestampPlaced = timestampPlaced,
+        status = status
+    )
+}
 
+@Serializable
 data class Transaction(
+    @SerialName("_id")
     val id: String = UUID.randomUUID().toString(),
     val itemId: String,
     val quantity: Int,
     val pricePerUnit: Double,
-    val buyerUUID: String,
-    val sellerUUID: String,
-    val timestampCompleted: Instant = Instant.now(),
+    @SerialName("buyerUUID")
+    val buyerUUID: String, // 구매자 UUID (String으로 저장)
+    @SerialName("sellerUUID")
+    val sellerUUID: String, // 판매자 UUID (String으로 저장)
+    val timestampCompleted: Long = Instant.now().toEpochMilli(),
     val buyOrderIdRef: String? = null, // 연관된 주문 ID (선택적)
     val sellOfferIdRef: String? = null // 연관된 제안 ID (선택적)
-)
+) {
+    // UUID 객체를 받아 String으로 변환하는 보조 생성자
+    constructor(
+        id: UUID = UUID.randomUUID(),
+        itemId: String,
+        quantity: Int,
+        pricePerUnit: Double,
+        buyerUUID: UUID,
+        sellerUUID: UUID,
+        timestampCompleted: Long = Instant.now().toEpochMilli(),
+        buyOrderIdRef: String? = null,
+        sellOfferIdRef: String? = null
+    ) : this(
+        id = id.toString(),
+        itemId = itemId,
+        quantity = quantity,
+        pricePerUnit = pricePerUnit,
+        buyerUUID = buyerUUID.toString(),
+        sellerUUID = sellerUUID.toString(),
+        timestampCompleted = timestampCompleted,
+        buyOrderIdRef = buyOrderIdRef,
+        sellOfferIdRef = sellOfferIdRef
+    )
+}
 
 // --- DTOs (Data Transfer Objects - API가 외부에 노출하는 데이터 형태) ---
 
@@ -124,7 +213,7 @@ data class PlayerOrderInfo(
     val quantityFulfilled: Int, // 채워진/판매된 수량
     val pricePerUnit: Double,
     val status: OrderStatus,
-    val timestampPlaced: Instant
+    val timestampPlaced: Long
 )
 
 // --- Repository Interfaces (Data Access Layer - DB와 통신) ---
@@ -164,8 +253,8 @@ interface TransactionRepository {
 
 // --- 서비스 인터페이스 ---
 interface EconomyService {
-    suspend fun hasEnoughFunds(playerUUID: String, amount: Double): Boolean
-    suspend fun withdraw(playerUUID: String, amount: Double): Boolean
+    suspend fun hasEnoughFunds(playerUUID: String, amount: Int): Boolean
+    suspend fun withdraw(playerUUID: String, amount: Int): Boolean
     suspend fun deposit(playerUUID: String, amount: Double): Boolean
 }
 
@@ -176,33 +265,6 @@ interface InventoryService {
     suspend fun removeItems(playerUUID: String, itemId: String, quantity: Int): Boolean
     // 아이템 추가
     suspend fun addItems(playerUUID: String, itemId: String, quantity: Int): Boolean
-}
-
-// --- 데이터베이스 관리자 인터페이스 ---
-interface DatabaseManager {
-    /**
-     * 트랜잭션을 시작하고 실행합니다.
-     * @param action 트랜잭션 내에서 실행할 작업
-     * @return 작업의 결과
-     */
-    suspend fun <T> executeTransaction(action: suspend (ClientSession) -> T): T
-    
-    /**
-     * 새로운 데이터베이스 세션을 생성합니다.
-     * @return 생성된 세션
-     */
-    suspend fun startSession(): ClientSession
-    
-    /**
-     * 현재 데이터베이스 연결이 활성 상태인지 확인합니다.
-     * @return 연결 상태
-     */
-    suspend fun isConnected(): Boolean
-    
-    /**
-     * 데이터베이스 연결을 닫습니다.
-     */
-    suspend fun close()
 }
 
 // --- API 인터페이스 ---
@@ -246,7 +308,7 @@ class BazaarAPIImpl(
         // 카테고리 존재 여부 확인 등 추가 로직 가능
         return productRepository.findByCategory(categoryId)
             .filter { it.isTradable } // 거래 가능한 상품만 필터링
-            .map { ProductInfo(it._id, it.name, it.description) }
+            .map { ProductInfo(it.id, it.name, it.description) }
     }
 
     override suspend fun searchProductsByName(query: String): List<ProductInfo> {
@@ -255,43 +317,75 @@ class BazaarAPIImpl(
         }
         return productRepository.findByNameQuery(query)
             .filter { it.isTradable }
-            .map { ProductInfo(it._id, it.name, it.description) }
+            .map { ProductInfo(it.id, it.name, it.description) }
     }
 
     override suspend fun getProductDetailsAndOrderBook(itemId: String): Pair<ProductInfo, OrderBookSnapshot>? {
-        val product = productRepository.findById(itemId) ?: return null // 상품 없으면 null 반환
-        if (!product.isTradable) return null // 거래 불가능 상품이면 null 반환
+        try {
+            println("[BazaarAPIImpl] 상품 정보 및 주문서 조회 시작: itemId=$itemId")
+            
+            val product = productRepository.findById(itemId)
+            if (product == null) {
+                println("[BazaarAPIImpl] 상품을 찾을 수 없음: itemId=$itemId")
+                return null // 상품 없으면 null 반환
+            }
+            
+            println("[BazaarAPIImpl] 상품 조회 성공: id=${product.id}, name=${product.name}")
+            
+            if (!product.isTradable) {
+                println("[BazaarAPIImpl] 거래 불가능한 상품: itemId=$itemId")
+                return null // 거래 불가능 상품이면 null 반환
+            }
 
-        val productInfo = ProductInfo(product._id, product.name, product.description)
+            val productInfo = ProductInfo(product.id, product.name, product.description)
+            println("[BazaarAPIImpl] ProductInfo 객체 생성 완료")
 
-        // 주문서 데이터 가져오기 (DB 조회 최적화 필요 - 예: 집계 쿼리 사용)
-        coroutineScope {
-            val buyOrdersDeferred = async { orderRepository.findActiveBuyOrdersForItem(itemId) }
-            val sellOffersDeferred = async { orderRepository.findActiveSellOffersForItem(itemId) }
+            // 주문서 데이터 가져오기(DB 조회 최적화 필요 - 집계 쿼리 사용)
+            try {
+                println("[BazaarAPIImpl] 구매 주문 및 판매 제안 조회 시작")
+                
+                // 각 조회를 별도로 실행하여 오류 발생 지점 파악
+                println("[BazaarAPIImpl] 구매 주문 조회 시작")
+                val buyOrders = orderRepository.findActiveBuyOrdersForItem(itemId)
+                println("[BazaarAPIImpl] 구매 주문 조회 완료: ${buyOrders.size}개")
+                
+                println("[BazaarAPIImpl] 판매 제안 조회 시작")
+                val sellOffers = orderRepository.findActiveSellOffersForItem(itemId)
+                println("[BazaarAPIImpl] 판매 제안 조회 완료: ${sellOffers.size}개")
+                
+                println("[BazaarAPIImpl] 구매 주문 수: ${buyOrders.size}, 판매 제안 수: ${sellOffers.size}")
 
-            val buyOrders = buyOrdersDeferred.await()
-            val sellOffers = sellOffersDeferred.await()
+                // 주문서 스냅샷 생성 (가격별 수량 집계)
+                val buyOrderEntries = buyOrders.groupBy { it.pricePerUnit }
+                    .map { (price, orders) -> OrderBookEntry(price, orders.sumOf { it.quantityOrdered - it.quantityFilled }) }
+                    .sortedByDescending { it.price }
 
-            // 주문서 스냅샷 생성 (가격별 수량 집계)
-            val buyOrderEntries = buyOrders.groupBy { it.pricePerUnit }
-                .map { (price, orders) -> OrderBookEntry(price, orders.sumOf { it.quantityOrdered - it.quantityFilled }) }
-                .sortedByDescending { it.price }
+                val sellOfferEntries = sellOffers.groupBy { it.pricePerUnit }
+                    .map { (price, offers) -> OrderBookEntry(price, offers.sumOf { it.quantityOffered - it.quantitySold }) }
+                    .sortedBy { it.price }
+                
+                println("[BazaarAPIImpl] 구매 주문 항목 수: ${buyOrderEntries.size}, 판매 제안 항목 수: ${sellOfferEntries.size}")
 
-            val sellOfferEntries = sellOffers.groupBy { it.pricePerUnit }
-                .map { (price, offers) -> OrderBookEntry(price, offers.sumOf { it.quantityOffered - it.quantitySold }) }
-                .sortedBy { it.price }
-
-            val snapshot = OrderBookSnapshot(
-                itemId = itemId,
-                highestBuyPrice = buyOrderEntries.firstOrNull()?.price,
-                lowestSellPrice = sellOfferEntries.firstOrNull()?.price,
-                buyOrders = buyOrderEntries,
-                sellOrders = sellOfferEntries
-            )
-            return@coroutineScope Pair(productInfo, snapshot)
+                val snapshot = OrderBookSnapshot(
+                    itemId = itemId,
+                    highestBuyPrice = buyOrderEntries.firstOrNull()?.price,
+                    lowestSellPrice = sellOfferEntries.firstOrNull()?.price,
+                    buyOrders = buyOrderEntries,
+                    sellOrders = sellOfferEntries
+                )
+                
+                println("[BazaarAPIImpl] OrderBookSnapshot 객체 생성 완료")
+                return Pair(productInfo, snapshot)
+            } catch (e: Exception) {
+                println("[BazaarAPIImpl] 주문서 데이터 조회 중 오류 발생: ${e.message}")
+                e.printStackTrace()
+                return null
+            }
+        } catch (e: Exception) {
+            println("[BazaarAPIImpl] getProductDetailsAndOrderBook 메서드 실행 중 오류 발생: ${e.message}")
+            e.printStackTrace()
+            return null
         }
-        // 이곳에 도달하면 안 됨 (coroutineScope가 결과를 반환하므로)
-        return null
     }
 
     // --- 주문 생성/취소 관련 API ---
@@ -310,7 +404,7 @@ class BazaarAPIImpl(
         val totalCost = quantity * pricePerUnit // 실제로는 세금 고려 필요
 
         // 3. 플레이어 재화 확인
-        if (!economyService.hasEnoughFunds(playerUUID, totalCost)) { // 세금 포함 금액으로 확인해야 함
+        if (!economyService.hasEnoughFunds(playerUUID, totalCost as Int)) { // 세금 포함 금액으로 확인해야 함
             return PlaceOrderResult(false, "소지금이 부족합니다.")
         }
 
@@ -429,23 +523,43 @@ class DummyBazaarCoreServiceImpl(
     // 동시성 제어를 위한 mutex 맵
     private val itemMutexes = ConcurrentHashMap<String, Mutex>()
     private val orderMutexes = ConcurrentHashMap<String, Mutex>()
-    
+
     // 특정 아이템에 대한 mutex 획득
     private fun getMutexForItem(itemId: String): Mutex {
         return itemMutexes.computeIfAbsent(itemId) { Mutex() }
     }
-    
+
     // 특정 주문에 대한 mutex 획득
     private fun getMutexForOrder(orderId: String): Mutex {
         return orderMutexes.computeIfAbsent(orderId) { Mutex() }
+    }
+    
+    // String을 UUID로 변환하는 유틸리티 함수
+    private fun String.toUUIDOrNull(): UUID? {
+        return try {
+            UUID.fromString(this)
+        } catch (e: IllegalArgumentException) {
+            null
+        }
     }
 
     override suspend fun createBuyOrder(playerUUID: String, itemId: String, quantity: Int, pricePerUnit: Double): PlaceOrderResult {
         // TODO: 실제 주문 매칭 로직 구현 (Sell Offer 찾아보기)
         println("Buy Order Matching 로직 실행 (Dummy)")
 
+        // playerUUID를 UUID 객체로 변환
+        val playerUUIDObj = playerUUID.toUUIDOrNull()
+        if (playerUUIDObj == null) {
+            return PlaceOrderResult(false, "유효하지 않은 플레이어 UUID 형식입니다.")
+        }
+
         // 매칭 안됐다고 가정하고 바로 주문 저장
-        val newOrder = BuyOrder(playerUUID = playerUUID, itemId = itemId, quantityOrdered = quantity, pricePerUnit = pricePerUnit)
+        val newOrder = BuyOrder(
+            playerUUID = playerUUIDObj,  // UUID 객체 전달
+            itemId = itemId,
+            quantityOrdered = quantity,
+            pricePerUnit = pricePerUnit
+        )
         val success = orderRepository.saveBuyOrder(newOrder)
         return if (success) {
             PlaceOrderResult(true, "구매 주문 생성됨 (매칭 로직 필요)", newOrder.id)
@@ -462,165 +576,46 @@ class DummyBazaarCoreServiceImpl(
             return PlaceOrderResult(false, "가격은 0보다 커야 합니다")
         }
         
+        // playerUUID를 UUID 객체로 변환
+        val playerUUIDObj = playerUUID.toUUIDOrNull()
+        if (playerUUIDObj == null) {
+            return PlaceOrderResult(false, "유효하지 않은 플레이어 UUID 형식입니다.")
+        }
+
         // 아이템에 대한 mutex 획득
         val itemMutex = getMutexForItem(itemId)
-        
+
         // 아이템 lock 획득 후 처리 진행
         return itemMutex.withLock {
             println("Sell Offer Matching 로직 실행 (아이템 ID: $itemId)")
-            
+
             // 아이템 소유 확인
             val hasItems = inventoryService.hasItems(playerUUID, itemId, quantity)
             if (!hasItems) {
-                return@withLock PlaceOrderResult(false, "충분한 아이템이 없습니다")
+                return@withLock PlaceOrderResult(false, "판매할 아이템이 충분하지 않습니다")
             }
-            
-            var remainingQuantity = quantity
-            var transactions = mutableListOf<Transaction>()
-            var totalEarned = 0.0
-            var itemsRemoved = false
-            
-            try {
-                // 아이템 임시 제거
-                inventoryService.removeItems(playerUUID, itemId, quantity)
-                itemsRemoved = true
-                
-                // 해당 아이템의 활성 구매 주문들을 가격 내림차순으로 가져옴 (높은 가격 우선)
-                val activeBuyOrders = orderRepository.findActiveBuyOrdersForItem(itemId)
-                
-                // 구매 주문과 매칭 시도
-                for (buyOrder in activeBuyOrders) {
-                    // 판매 가격이 구매 가격보다 높으면 매칭 불가
-                    if (pricePerUnit > buyOrder.pricePerUnit) {
-                        break // 더 낮은 가격의 주문은 확인할 필요 없음
-                    }
-                    
-                    // 구매 주문에 대한 mutex 획득 (주문 잠금)
-                    val orderMutex = getMutexForOrder(buyOrder.id)
-                    orderMutex.withLock {
-                        // 주문 최신 상태 확인 (동시성 문제 방지)
-                        val updatedBuyOrder = orderRepository.findBuyOrderById(buyOrder.id)
-                        if (updatedBuyOrder == null || 
-                            updatedBuyOrder.status != OrderStatus.ACTIVE && 
-                            updatedBuyOrder.status != OrderStatus.PARTIALLY_FILLED) {
-                            return@withLock null // 이 주문은 건너뜀
-                        }
-                        
-                        val buyerUUID = updatedBuyOrder.playerUUID
-                        val availableToBuy = updatedBuyOrder.quantityOrdered - updatedBuyOrder.quantityFilled
-                        
-                        if (availableToBuy <= 0) return@withLock null // 이 주문은 건너뜀
-                        
-                        val matchedQuantity = minOf(remainingQuantity, availableToBuy)
-                        val transactionPrice = updatedBuyOrder.pricePerUnit // 구매자 가격으로 거래
-                        val totalPrice = transactionPrice * matchedQuantity
-                        
-                        // 세금 계산
-                        val tax = totalPrice * taxRate
-                        val sellerReceives = totalPrice - tax
-                        
-                        try {
-                            // 1. 구매자에게 아이템 지급
-                            inventoryService.addItems(buyerUUID, itemId, matchedQuantity)
-                            
-                            // 2. 판매자에게 돈 지급 (세금 제외)
-                            economyService.deposit(playerUUID, sellerReceives)
-                            
-                            // 3. 구매 주문 업데이트
-                            updatedBuyOrder.quantityFilled += matchedQuantity
-                            if (updatedBuyOrder.quantityFilled >= updatedBuyOrder.quantityOrdered) {
-                                updatedBuyOrder.status = OrderStatus.FILLED
-                            } else {
-                                updatedBuyOrder.status = OrderStatus.PARTIALLY_FILLED
-                            }
-                            val updateSuccess = orderRepository.updateBuyOrder(updatedBuyOrder)
-                            
-                            if (!updateSuccess) {
-                                // 구매 주문 업데이트 실패시 롤백
-                                economyService.withdraw(playerUUID, sellerReceives) // 안전을 위해 try-catch로 감싸도 좋음
-                                inventoryService.removeItems(buyerUUID, itemId, matchedQuantity)
-                                return@withLock null // 이 주문은 건너뜀
-                            }
-                            
-                            // 4. 거래 내역 저장
-                            val transaction = Transaction(
-                                buyerUUID = buyerUUID,
-                                sellerUUID = playerUUID,
-                                itemId = itemId,
-                                quantity = matchedQuantity,
-                                pricePerUnit = transactionPrice
-                            )
-                            
-                            val txSuccess = transactionRepository.saveTransaction(transaction)
-                            if (!txSuccess) {
-                                // 거래 저장 실패시에도 계속 진행 (로그만 남김)
-                                println("거래 내역 저장 실패: $transaction")
-                                // 여기서는 롤백하지 않음 - 실제 거래는 완료됨
-                            } else {
-                                transactions.add(transaction)
-                            }
-                            
-                            // 판매자 총 수익 누적
-                            totalEarned += sellerReceives
-                            
-                            // 남은 수량 갱신
-                            remainingQuantity -= matchedQuantity
-                            if (remainingQuantity <= 0) return@withLock true // 모든 수량 매칭 완료
-                        } catch (e: Exception) {
-                            println("주문 매칭 중 오류 발생: ${e.message}")
-                            // 이 매칭은 건너뛰고 다음 주문 시도
-                            return@withLock null
-                        }
-                        return@withLock true // 매칭 성공
-                    }
-                }
-                
-                // 남은 수량이 있으면 판매 제안으로 등록
-                if (remainingQuantity > 0) {
-                    val newOffer = SellOffer(
-                        playerUUID = playerUUID,
-                        itemId = itemId,
-                        quantityOffered = remainingQuantity,
-                        pricePerUnit = pricePerUnit
-                    )
-                    
-                    val success = orderRepository.saveSellOffer(newOffer)
-                    
-                    if (success) {
-                        val message = if (quantity > remainingQuantity) {
-                            "${quantity - remainingQuantity}개는 즉시 판매되었고, ${remainingQuantity}개는 판매 제안으로 등록되었습니다. 총 수익: ${totalEarned}원"
-                        } else {
-                            "판매 제안이 등록되었습니다."
-                        }
-                        return@withLock PlaceOrderResult(true, message, newOffer.id)
-                    } else {
-                        // 저장 실패 시 아이템 반환 필요
-                        inventoryService.addItems(playerUUID, itemId, remainingQuantity)
-                        return@withLock PlaceOrderResult(false, "일부 수량만 매칭되었고, 나머지 제안 저장에 실패했습니다.")
-                    }
-                }
-                
-                // 모든 아이템이 매칭된 경우
-                return@withLock PlaceOrderResult(true, "모든 수량(${quantity}개)이 즉시 판매되었습니다. 총 수익: ${totalEarned}원", null)
-            } catch (e: Exception) {
-                // 오류 발생 시 롤백
-                println("Sell Offer 생성 중 오류 발생: ${e.message}")
-                
-                // 이미 제거된 아이템이 있으면 반환
-                if (itemsRemoved) {
-                    try {
-                        // 이미 판매된 수량을 제외하고 반환
-                        val quantityToReturn = quantity - (quantity - remainingQuantity)
-                        if (quantityToReturn > 0) {
-                            inventoryService.addItems(playerUUID, itemId, quantityToReturn)
-                        }
-                    } catch (e2: Exception) {
-                        println("아이템 반환 중 오류 발생: ${e2.message}")
-                    }
-                }
-                
-                return@withLock PlaceOrderResult(false, "판매 제안 처리 중 오류가 발생했습니다: ${e.message}")
+
+            // 아이템 제거 (판매 제안 시점에 아이템을 에스크로로 이동)
+            val removeSuccess = inventoryService.removeItems(playerUUID, itemId, quantity)
+            if (!removeSuccess) {
+                return@withLock PlaceOrderResult(false, "아이템 제거 실패")
             }
+
+            // 매칭 안됐다고 가정하고 바로 판매 제안 저장
+            val newOffer = SellOffer(
+                playerUUID = playerUUIDObj,  // UUID 객체 전달
+                itemId = itemId,
+                quantityOffered = quantity,
+                pricePerUnit = pricePerUnit
+            )
+            val success = orderRepository.saveSellOffer(newOffer)
+            if (!success) {
+                // 저장 실패 시 아이템 반환
+                inventoryService.addItems(playerUUID, itemId, quantity)
+                return@withLock PlaceOrderResult(false, "판매 제안 저장 실패")
+            }
+
+            return@withLock PlaceOrderResult(true, "판매 제안 생성됨 (매칭 로직 필요)", newOffer.id)
         }
     }
 
@@ -665,7 +660,7 @@ class DummyBazaarCoreServiceImpl(
             }
 
             // 3. 플레이어 재화 확인
-            if (!economyService.hasEnoughFunds(playerUUID, totalCost)) {
+            if (!economyService.hasEnoughFunds(playerUUID, totalCost.toInt())) {
                 return@withLock TransactionResult(false, "충분한 재화가 없습니다. 필요: ${totalCost}원")
             }
 
@@ -677,7 +672,7 @@ class DummyBazaarCoreServiceImpl(
 
             try {
                 // 4. 구매자 재화 차감
-                economyService.withdraw(playerUUID, totalCost)
+                economyService.withdraw(playerUUID, totalCost.toInt())
                 fundsWithdrawn = true
 
                 // 5. 실제 거래 처리
@@ -725,7 +720,7 @@ class DummyBazaarCoreServiceImpl(
                             val updateSuccess = orderRepository.updateSellOffer(updatedOffer)
                             if (!updateSuccess) {
                                 // 업데이트 실패 시 롤백
-                                economyService.withdraw(sellerUUID, sellerReceives)
+                                economyService.withdraw(sellerUUID, sellerReceives.toInt())
                                 inventoryService.removeItems(playerUUID, itemId, finalQuantityToBuy)
                                 return@withLock null // 이 제안은 건너뜀
                             }
@@ -921,7 +916,7 @@ class DummyBazaarCoreServiceImpl(
                             if (!updateSuccess) {
                                 // 롤백: 지급된 아이템 및 재화 회수
                                 inventoryService.removeItems(buyerUUID, itemId, matchedQuantity)
-                                economyService.withdraw(playerUUID, sellerReceives)
+                                economyService.withdraw(playerUUID, sellerReceives.toInt())
                                 return@withLock null // 이 주문은 건너뜀
                             }
 
@@ -1055,7 +1050,7 @@ class DummyBazaarCoreServiceImpl(
                         // 환불했는데 취소 처리 실패 시 롤백 시도
                         if (refundAmount > 0) {
                             try {
-                                economyService.withdraw(playerUUID, refundAmount)
+                                economyService.withdraw(playerUUID, refundAmount.toInt())
                             } catch (e: Exception) {
                                 println("롤백 실패: ${e.message}")
                                 // 롤백 실패해도 플레이어에게 메시지만 표시 (수동으로 처리 필요)

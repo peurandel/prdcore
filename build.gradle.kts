@@ -25,14 +25,20 @@ repositories {
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+    implementation("org.jetbrains.kotlin:kotlin-reflect") // 리플렉션 라이브러리 추가
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
     implementation("org.reflections:reflections:0.10.2")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2") // 사용 중인 코루틴 코어 버전 예시
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactive:1.10.2") // 코어와 버전 맞추기
-    implementation("org.mongodb:mongodb-driver-sync:5.3.1")
-    implementation("org.mongodb:mongodb-driver-kotlin-coroutine:4.11.1") // 최신 안정화 버전 사용 권장 (버전 확인 필요)
-    implementation("org.litote.kmongo:kmongo-coroutine-serialization:5.2.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2") // 코루틴 코어
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactive:1.10.2") // 코루틴 리액티브
+    
+    // MongoDB 표준 드라이버 (버전 통일)
+    implementation("org.mongodb:mongodb-driver-sync:5.1.4")
+    implementation("org.mongodb:bson:5.1.4") // BSON 문서 처리
+    
+    // MongoDB Kotlin 확장 (KMongo 대체)
     implementation("org.mongodb:bson-kotlin:5.1.4")
+    
+    // GUI 관련
     implementation("net.wesjd:anvilgui:1.10.5-SNAPSHOT")
 }
 
@@ -57,5 +63,5 @@ tasks.processResources {
 // tasks.jar -> tasks.shadowJar 로 변경
 tasks.shadowJar {
     archiveFileName.set("prdcore.jar") // 최종적으로 plugins 폴더에 생성될 파일 이름
-    destinationDirectory.set(file("D:\\Project\\server\\1.21.4\\plugins")) // plugins 폴더 경로
+    destinationDirectory.set(file("D:\\server\\minecraft_server_data\\plugins")) // plugins 폴더 경로
 }

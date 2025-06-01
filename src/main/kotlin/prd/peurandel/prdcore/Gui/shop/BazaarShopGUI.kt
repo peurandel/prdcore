@@ -5,6 +5,7 @@ import com.mongodb.client.model.Filters
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import net.kyori.adventure.text.Component
 import org.bukkit.Bukkit
 import org.bukkit.ChatColor
 import org.bukkit.Material
@@ -36,7 +37,7 @@ import org.bukkit.event.player.AsyncPlayerChatEvent
 class BazaarShopGUI(plugin: JavaPlugin, private val bazaarAPI: BazaarAPI, private val database: MongoDatabase) : BaseGUI(plugin, "바자 상점 - 다이아몬드", 54) {
 
     companion object {
-        private const val DIAMOND_ITEM_ID = "diamond" // MongoDB에 저장된 ID로 변경
+        private const val DIAMOND_ITEM_ID = "DIAMOND" // MongoDB에 저장된 ID로 변경
 
         // GUI 슬롯 위치
         private const val INFO_SLOT = 4
@@ -58,59 +59,152 @@ class BazaarShopGUI(plugin: JavaPlugin, private val bazaarAPI: BazaarAPI, privat
     private var cachedProductInfo: ProductInfo? = null
     private var cachedOrderBook: OrderBookSnapshot? = null
 
-    override fun initializeItems(plugin: JavaPlugin, player: String) {
-        // 모든 슬롯을 배경 유리로 초기화
-        for (i in 0..53) {
-            inventory.setItem(i, ItemStack(Material.LIGHT_GRAY_STAINED_GLASS_PANE))
+    private fun getStainedGlassPane() : ItemStack {
+        val item = ItemStack(Material.PINK_STAINED_GLASS_PANE)
+        item.editMeta { meta ->
+            meta.setHideTooltip(true)
         }
+        return item
+    }
+    private fun getCategoryFarming() : ItemStack {
+        val item = ItemStack(Material.NETHERITE_HOE)
+        item.editMeta { meta ->
+            meta.displayName(Component.text("${ChatColor.YELLOW}Farming"))
+            meta.lore = listOf("${ChatColor.GRAY}Category")
+        }
+        return item
+    }
+    private fun getCategoryMining() : ItemStack {
+        val item = ItemStack(Material.DIAMOND_PICKAXE)
+        item.editMeta { meta ->
+
+            meta.displayName(Component.text("${ChatColor.YELLOW}Mining"))
+            meta.lore = listOf("${ChatColor.GRAY}Category")
+        }
+        return item
+    }
+
+    private fun getCategoryCombat() : ItemStack {
+        val item = ItemStack(Material.IRON_SWORD)
+        item.editMeta { meta ->
+
+            meta.displayName(Component.text("${ChatColor.YELLOW}Combat"))
+            meta.lore = listOf("${ChatColor.GRAY}Category")
+        }
+        return item
+    }
+    private fun getCategoryWoodFish() : ItemStack {
+        val item = ItemStack(Material.FISHING_ROD)
+        item.editMeta { meta ->
+
+            meta.displayName(Component.text("${ChatColor.YELLOW}Wood & Fish"))
+            meta.lore = listOf("${ChatColor.GRAY}Category")
+        }
+        return item
+    }
+    private fun getCategoryOddities() : ItemStack {
+        val item = ItemStack(Material.FURNACE)
+        item.editMeta { meta ->
+
+            meta.displayName(Component.text("${ChatColor.LIGHT_PURPLE}Oddities"))
+            meta.lore = listOf("${ChatColor.GRAY}Category")
+        }
+        return item
+    }
+
+
+
+
+    override fun initializeItems(plugin: JavaPlugin, player: String) {
+        // 모든 슬롯을 배경 유리로 초기화\
+        inventory.setItem(0, getCategoryFarming())
+        inventory.setItem(1, getStainedGlassPane())
+        inventory.setItem(2, getStainedGlassPane())
+        inventory.setItem(3, getStainedGlassPane())
+        inventory.setItem(4, getStainedGlassPane())
+        inventory.setItem(5, getStainedGlassPane())
+        inventory.setItem(6, getStainedGlassPane())
+        inventory.setItem(7, getStainedGlassPane())
+        inventory.setItem(8, getStainedGlassPane())
+        inventory.setItem(9, getCategoryMining())
+        inventory.setItem(10, getStainedGlassPane())
+        inventory.setItem(17, getStainedGlassPane())
+        inventory.setItem(18, getCategoryCombat())
+        inventory.setItem(19, getStainedGlassPane())
+        inventory.setItem(26, getStainedGlassPane())
+        inventory.setItem(27, getCategoryWoodFish())
+        inventory.setItem(28, getStainedGlassPane())
+        inventory.setItem(35, getStainedGlassPane())
+        inventory.setItem(36, getCategoryOddities())
+        inventory.setItem(37, getStainedGlassPane())
+        inventory.setItem(44, getStainedGlassPane())
+
+        inventory.setItem(46, getStainedGlassPane())
+        inventory.setItem(53, getStainedGlassPane())
 
         // 비동기로 바자 데이터 로드 및 UI 구성
         GlobalScope.launch {
             try {
+                Bukkit.getLogger().info("[BazaarShopGUI] 다이아몬드 상품 정보 로드 시작: itemId=$DIAMOND_ITEM_ID")
+
                 // 다이아몬드 상품 정보와 주문서 스냅샷 가져오기
                 val productBookPair = bazaarAPI.getProductDetailsAndOrderBook(DIAMOND_ITEM_ID)
+
                 if (productBookPair == null) {
-                    Bukkit.getPlayer(player)?.sendMessage("§c다이아몬드 상품 정보를 가져올 수 없습니다.")
+                    Bukkit.getLogger().warning("[BazaarShopGUI] 다이아몬드 상품 정보를 가져올 수 없습니다. productBookPair is null")
                     return@launch
                 }
 
+                Bukkit.getLogger().info("[BazaarShopGUI] 다이아몬드 상품 정보 로드 성공")
+
                 val (productInfo, orderBook) = productBookPair
+                Bukkit.getLogger().info("[BazaarShopGUI] 상품 정보: id=${productInfo.id}, name=${productInfo.name}")
+                Bukkit.getLogger().info("[BazaarShopGUI] 주문서: itemId=${orderBook.itemId}, 구매 주문 수=${orderBook.buyOrders.size}, 판매 제안 수=${orderBook.sellOrders.size}")
+
                 cachedProductInfo = productInfo
                 cachedOrderBook = orderBook
 
                 // UI 요소 동기적으로 업데이트
                 Bukkit.getScheduler().runTask(plugin, Runnable {
-                    // 상품 정보 아이템 설정
-                    inventory.setItem(INFO_SLOT, createInfoItem(productInfo, orderBook))
+                    try {
+                        // 상품 정보 아이템 설정
+                        inventory.setItem(INFO_SLOT, createInfoItem(productInfo, orderBook))
+                        Bukkit.getLogger().info("[BazaarShopGUI] 상품 정보 아이템 생성 완료")
 
-                    // 판매 제안 표시 (가장 낮은 가격부터)
-                    displaySellOffers(orderBook)
+                        // 판매 제안 표시 (가장 낮은 가격부터)
+                        displaySellOffers(orderBook)
+                        Bukkit.getLogger().info("[BazaarShopGUI] 판매 제안 표시 완료")
 
-                    // 구매 주문 표시 (가장 높은 가격부터)
-                    displayBuyOrders(orderBook)
+                        // 구매 주문 표시 (가장 높은 가격부터)
+                        Bukkit.getLogger().info("[BazaarShopGUI] 구매 주문 표시 시작")
+                        displayBuyOrders(orderBook)
+                        Bukkit.getLogger().info("[BazaarShopGUI] 구매 주문 표시 완료")
 
-                    // 즉시 구매 버튼
-                    inventory.setItem(INSTANT_BUY_SLOT, createInstantBuyItem(orderBook))
+                        // 즉시 구매 버튼
+                        inventory.setItem(INSTANT_BUY_SLOT, createInstantBuyItem(orderBook))
+                        Bukkit.getLogger().info("[BazaarShopGUI] 즉시 구매 버튼 생성 완료")
 
-                    // 즉시 판매 버튼
-                    inventory.setItem(INSTANT_SELL_SLOT, createInstantSellItem(orderBook))
+                        // 즉시 판매 버튼
+                        inventory.setItem(INSTANT_SELL_SLOT, createInstantSellItem(orderBook))
+                        Bukkit.getLogger().info("[BazaarShopGUI] 즉시 판매 버튼 생성 완료")
 
-                    // 구매 주문 생성 버튼
-                    inventory.setItem(CREATE_BUY_ORDER_SLOT, createButtonItem(Material.EMERALD_BLOCK, "§a구매 주문 생성",
-                        listOf("§7특정 가격으로 다이아몬드를 구매하는 주문을 생성합니다.")))
-
-                    // 판매 제안 생성 버튼
-                    inventory.setItem(CREATE_SELL_OFFER_SLOT, createButtonItem(Material.GOLD_BLOCK, "§6판매 제안 생성",
-                        listOf("§7특정 가격으로 다이아몬드를 판매하는 제안을 생성합니다.")))
+                        // 구매 주문 생성 버튼
+                        inventory.setItem(CREATE_BUY_ORDER_SLOT, createButtonItem(Material.EMERALD_BLOCK, "§a구매 주문 생성",
+                            listOf("§7특정 가격으로 다이아몬드를 구매하는 주문을 생성합니다.")))
+                        Bukkit.getLogger().info("[BazaarShopGUI] 구매 주문 생성 버튼 생성 완료")
+                    } catch (e: Exception) {
+                        Bukkit.getLogger().severe("[BazaarShopGUI] UI 업데이트 중 오류 발생: ${e.message}")
+                        e.printStackTrace()
+                    }
                 })
             } catch (e: Exception) {
+                Bukkit.getLogger().severe("[BazaarShopGUI] 다이아몬드 상품 정보 로드 중 오류 발생: ${e.message}")
                 e.printStackTrace()
-                Bukkit.getPlayer(player)?.sendMessage("§c바자 데이터를 로드하는 중 오류가 발생했습니다: ${e.message}")
+                Bukkit.getPlayer(player)?.sendMessage("§c오류가 발생했습니다: ${e.message}")
             }
         }
 
         // GUI 정보/닫기 버튼
-        inventory.setItem(45, Button().GoBack(plugin, "메인 메뉴로"))
         inventory.setItem(INSTANT_BUY_SLOT, GUIInfo(Bukkit.getOfflinePlayer(player).player?.uniqueId.toString()))
     }
 

@@ -35,10 +35,10 @@ class PRDCommand(private val plugin: JavaPlugin,database: MongoDatabase,bazaarAP
     private fun openshop(player: Player, args: Array<String>) {
         when(args[1]) {
             "build" -> {
-                shopgui(plugin,database,"build").open(plugin,player)
+                shopgui(plugin, database, "build").open(plugin, player)
             }
             "bazaar" -> {
-                BazaarShopGUI(plugin, bazaarAPI,database).open(plugin,player)
+                BazaarShopGUI(plugin, bazaarAPI, database).open(plugin, player)
             }
             else -> {
                 player.sendMessage("${ChatColor.RED}ERROR. UNKNOWN SHOP")
