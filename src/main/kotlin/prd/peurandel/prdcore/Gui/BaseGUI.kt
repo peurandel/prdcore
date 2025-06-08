@@ -6,7 +6,7 @@ import org.bukkit.event.inventory.InventoryClickEvent
 import org.bukkit.inventory.Inventory
 import org.bukkit.plugin.java.JavaPlugin
 
-abstract class BaseGUI(val plugin: JavaPlugin, val title: String, val size: Int) {
+abstract class BaseGUI(open val plugin: JavaPlugin, val title: String, val size: Int) {
     protected val inventory: Inventory = Bukkit.createInventory(null,size,title)
 
     abstract fun initializeItems(plugin: JavaPlugin,player: String)

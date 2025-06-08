@@ -20,6 +20,9 @@ repositories {
     maven("https://repo.codemc.org/repository/maven-public/") {
 
     }
+    maven("https://repo.dmulloy2.net/repository/public/"){
+
+    }
 }
 
 dependencies {
@@ -40,6 +43,9 @@ dependencies {
     
     // GUI 관련
     implementation("net.wesjd:anvilgui:1.10.5-SNAPSHOT")
+
+    //ProtocolLib
+    implementation("com.comphenix.protocol:ProtocolLib:4.8.0")
 }
 
 val targetJavaVersion = 21

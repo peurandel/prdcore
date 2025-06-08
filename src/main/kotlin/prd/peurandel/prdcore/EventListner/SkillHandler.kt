@@ -54,10 +54,19 @@ object SkillHandler {
         val shooterKey = NamespacedKey(plugin, "skill_owner")
         laser.persistentDataContainer.set(shooterKey, PersistentDataType.STRING, player.uniqueId.toString())
 
+        // 생성 시간 저장 (청크 언로드/로드에도 일관적인 수명 관리를 위함)
+        val creationTimeKey = NamespacedKey(plugin, "creation_time")
+        laser.persistentDataContainer.set(creationTimeKey, PersistentDataType.LONG, System.currentTimeMillis())
+        
+        // 최대 수명 저장 (15초 = 15000ms)
+        val lifespanKey = NamespacedKey(plugin, "max_lifespan")
+        laser.persistentDataContainer.set(lifespanKey, PersistentDataType.LONG, 15000L)
+
         // **엔티티의 이동 방향 (velocity) 설정**
         laser.velocity = direction.multiply(speed)
 
         // 일정 시간 후 ArmorStand 제거 (틱 방식으로 충돌 처리하므로 너무 오래 남아있으면 안됨)
+        // 청크 언로드/로드에 대비해 SkillTick에서도 수명을 확인하도록 수정했으므로 여기서의 제거 작업은 백업용
         object : BukkitRunnable() {
             override fun run() {
                 if (laser.isValid) {

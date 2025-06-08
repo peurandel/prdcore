@@ -22,23 +22,38 @@ import prd.peurandel.prdcore.Gui.shop.shopgui
 import prd.peurandel.prdcore.Handler.buildingHandler
 import prd.peurandel.prdcore.ItemStack.ItemSerialization
 import prd.peurandel.prdcore.ItemStack.SuitItemHandler
+import prd.peurandel.prdcore.Main
 import prd.peurandel.prdcore.Manager.*
 
-class PRDCommand(private val plugin: JavaPlugin,database: MongoDatabase,bazaarAPI: BazaarAPI) : CommandExecutor, TabCompleter {
+class PRDCommand(private val plugin: JavaPlugin, database: MongoDatabase, bazaarAPI: BazaarAPI) : CommandExecutor, TabCompleter {
 
     val database = database
     val bazaarAPI = bazaarAPI
     val ServerCollection = database.getCollection("server")
-    private lateinit var configManager: ConfigManager
-    private lateinit var messageConfigManager: MessageConfigManager // MessageConfigManager 인스턴스
+    private var configManager: ConfigManager = ConfigManager(plugin)
+    private var messageConfigManager: MessageConfigManager = MessageConfigManager(plugin, "messages.yml")
     val buildingHandler: buildingHandler = buildingHandler(plugin)
+
     private fun openshop(player: Player, args: Array<String>) {
         when(args[1]) {
             "build" -> {
                 shopgui(plugin, database, "build").open(plugin, player)
             }
             "bazaar" -> {
-                BazaarShopGUI(plugin, bazaarAPI, database).open(plugin, player)
+                try {
+                    // Main 클래스에서 바자 데이터베이스 가져오기
+                    val main = Main.getInstance()
+                    val bazaarDb = main.mongoDBManager.connectToDataBase("bazaar")
+
+                    // 인스턴스 관리 메서드 사용하여 BazaarShopGUI 인스턴스 획득
+                    BazaarShopGUI(plugin, bazaarDb).open(plugin, player)
+
+                    plugin.logger.info("[BazaarShopGUI] ${player.name}에게 바자회 상점이 열렸습니다.")
+                } catch (e: Exception) {
+                    plugin.logger.severe("[BazaarShopGUI] 바자 데이터베이스 연결 실패: ${e.message}")
+                    e.printStackTrace()
+                    player.sendMessage("§c바자회 상점을 열 수 없습니다. 관리자에게 문의하세요.")
+                }
             }
             else -> {
                 player.sendMessage("${ChatColor.RED}ERROR. UNKNOWN SHOP")
@@ -79,33 +94,47 @@ class PRDCommand(private val plugin: JavaPlugin,database: MongoDatabase,bazaarAP
                     "give" -> handleItemGive(player, args)
                     else -> player.sendMessage("알 수 없는 서브 명령어: ${args[1]}")
                 }
+                return true
             }
             "reload" -> {
-                if (sender == player) {
-                    sender.sendMessage("알 수 없는 명령어거나 권한이 없습니다.")
+                if (!sender.isOp) {
+                    sender.sendMessage("§c권한이 없습니다.")
                     return true
                 }
-                //reloadPluginConfigs()
-                sender.sendMessage(messageConfigManager.getMessage("config_reloaded"))
+
+                try {
+                    messageConfigManager.reloadConfig()
+                    sender.sendMessage("§a설정이 다시 로드되었습니다.")
+                } catch (e: Exception) {
+                    sender.sendMessage("§c설정 로드 중 오류가 발생했습니다: ${e.message}")
+                    plugin.logger.severe("설정 로드 중 오류: ${e.message}")
+                    e.printStackTrace()
+                }
+
                 return true
             }
             "shop" -> {
                 if(sender==player && sender.isOp) {
                     openshop(player,args)
                 } else {
-                    player.sendMessage("${ChatColor.RED}알 수 없는 명령어: ${args[0]}")
+                    player.sendMessage("${ChatColor.RED}권한이 없거나 알 수 없는 명령어입니다.")
                 }
+                return true
             }
             "spawn" -> {
                 if(sender==player && sender.isOp) {
                     spawn(player,args)
                 } else {
-                    player.sendMessage("${ChatColor.RED}알 수 없는 명령어: ${args[0]}")
+                    player.sendMessage("${ChatColor.RED}권한이 없거나 알 수 없는 명령어입니다.")
                 }
+                return true
             }
-            else -> player.sendMessage("${ChatColor.RED}알 수 없는 명령어: ${args[0]}")
+            else -> {
+                player.sendMessage("${ChatColor.RED}알 수 없는 명령어: ${args[0]}")
+                player.sendMessage("§7사용 가능한 명령어: item, reload, shop, spawn")
+                return true
+            }
         }
-        return true
     }
 
 
@@ -267,10 +296,10 @@ class PRDCommand(private val plugin: JavaPlugin,database: MongoDatabase,bazaarAP
     private fun loadPluginSettings() {
     }
 
-    fun getPluginConfig(): ConfigManager { // ConfigManager 인스턴스 반환 메서드 (필요한 경우)
+    fun getPluginConfig(): ConfigManager {
         return configManager
     }
-    fun getMessageConfig(): MessageConfigManager { // MessageConfigManager 인스턴스 반환 메서드 (필요한 경우)
+    fun getMessageConfig(): MessageConfigManager {
         return messageConfigManager
     }
 
