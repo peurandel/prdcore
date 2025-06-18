@@ -46,7 +46,7 @@ class PRDCommand(private val plugin: JavaPlugin, database: MongoDatabase, bazaar
                     val bazaarDb = main.mongoDBManager.connectToDataBase("bazaar")
 
                     // 인스턴스 관리 메서드 사용하여 BazaarShopGUI 인스턴스 획득
-                    BazaarShopGUI(plugin, bazaarDb).open(plugin, player)
+                    BazaarShopGUI(plugin,bazaarDb).open(plugin, player)
 
                     plugin.logger.info("[BazaarShopGUI] ${player.name}에게 바자회 상점이 열렸습니다.")
                 } catch (e: Exception) {
