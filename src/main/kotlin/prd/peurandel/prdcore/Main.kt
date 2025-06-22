@@ -355,7 +355,7 @@ class Main : JavaPlugin() {
             // 중요: BazaarShopGUI 생성 시 BazaarAPI 전달 (이전 버전과 동일하게)
             if (::bazaarAPI.isInitialized) {
                 val bazaarDB = mongoClient.getDatabase("bazaar")
-                handler.registerGUI(BazaarShopGUI(this,bazaarDB))
+                handler.registerGUI(BazaarShopGUI(this,bazaarAPI,bazaarDB))
             } else {
                 logger.warning("[GUI] BazaarAPI가 초기화되지 않아 BazaarShopGUI를 등록할 수 없습니다.")
             }

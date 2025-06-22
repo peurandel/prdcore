@@ -43,7 +43,8 @@ dependencies {
     
     // GUI 관련
     implementation("net.wesjd:anvilgui:1.10.5-SNAPSHOT")
-
+    // https://mvnrepository.com/artifact/org.springframework.data/spring-data-mongodb
+    implementation("org.springframework.data:spring-data-mongodb:5.0.0-M3")
     //ProtocolLib
     implementation("com.comphenix.protocol:ProtocolLib:4.8.0")
 }

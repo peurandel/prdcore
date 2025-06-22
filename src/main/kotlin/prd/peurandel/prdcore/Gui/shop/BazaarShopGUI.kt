@@ -10,26 +10,27 @@ import org.bukkit.Material
 import org.bukkit.enchantments.Enchantment
 import org.bukkit.entity.Player
 import org.bukkit.event.inventory.InventoryClickEvent
+import org.bukkit.event.inventory.InventoryCloseEvent
 import org.bukkit.inventory.ItemFlag
 import org.bukkit.inventory.ItemStack
 import org.bukkit.plugin.java.JavaPlugin
 import prd.peurandel.prdcore.Gui.BaseGUI
-import org.bukkit.event.inventory.InventoryCloseEvent
-import org.bson.Document
 import org.bukkit.Bukkit
 import org.bukkit.ChatColor
 import org.bukkit.NamespacedKey
 import org.bukkit.event.EventHandler
 import org.bukkit.event.HandlerList
 import org.bukkit.event.Listener
+import org.bukkit.event.player.AsyncPlayerChatEvent
 import org.bukkit.inventory.Inventory
 import org.bukkit.persistence.PersistentDataType
+import prd.peurandel.prdcore.Manager.BazaarAPI
 import prd.peurandel.prdcore.Manager.Category
 
 /**
  * 바자회 물건 구매 GUI
  */
-class BazaarShopGUI(plugin: JavaPlugin, private val database: MongoDatabase) : BaseGUI(plugin,"바자", 54) {
+class BazaarShopGUI(plugin: JavaPlugin,private val bazaarAPI: BazaarAPI, private val database: MongoDatabase) : BaseGUI(plugin,"바자", 54) {
 
     companion object {
         // 카테고리 정보를 담는 클래스
@@ -487,6 +488,13 @@ class BazaarShopGUI(plugin: JavaPlugin, private val database: MongoDatabase) : B
                         }
                     }
                 }
+                
+                @EventHandler
+                fun onInventoryClose(event: InventoryCloseEvent) {
+                    if (event.inventory == productInventory && event.player == player) {
+                        HandlerList.unregisterAll(this)
+                    }
+                }
             }
 
             Bukkit.getPluginManager().registerEvents(productListener, plugin)
@@ -505,6 +513,18 @@ class BazaarShopGUI(plugin: JavaPlugin, private val database: MongoDatabase) : B
         for (i in 0 until 36) {
             productInventory.setItem(i,getStainedGlassPane("GRAY_STAINED_GLASS_PANE"))
         }
+
+
+        // TODO: 즉시 구매: 금말갑옷, 즉시 판매: 호퍼, 중간: 팔 물건, 구매 제안 : 편 지도, 판매 제안 : 안편 지도
+        // 제목, 상품 ID, Price per unit, Stack price, Click to pick amount
+
+        productInventory.setItem(10,createInstantBuyButton(productId))
+        productInventory.setItem(11,createInstantSellButton(productId))
+        // TODO : 13, ITEM
+        productInventory.setItem(15,createBuyOrderButton(productId))
+        productInventory.setItem(16,createSellOrderButton(productId))
+
+
         productInventory.setItem(30,createBackButton(productsId))
         productInventory.setItem(31,createBackToBazaarButton())
 
@@ -534,6 +554,17 @@ class BazaarShopGUI(plugin: JavaPlugin, private val database: MongoDatabase) : B
                         HandlerList.unregisterAll(this)
                         open(plugin, player)
                     }
+                    "sell_order" -> {
+                        openSellOfferCreationGUI(player, productId)
+                        HandlerList.unregisterAll(this)
+                    }
+                }
+            }
+            // 이거 없으면 ESC로 닫아버리면 이벤트 처리가 유지된다. 반드시 넣어라
+            @EventHandler
+            fun onInventoryClose(event: InventoryCloseEvent) {
+                if (event.inventory == productInventory && event.player == player) {
+                    HandlerList.unregisterAll(this)
                 }
             }
         }
@@ -564,6 +595,59 @@ class BazaarShopGUI(plugin: JavaPlugin, private val database: MongoDatabase) : B
             meta.persistentDataContainer.set(NamespacedKey(plugin, "button"),PersistentDataType.STRING, "back_to_bazaar") }
         return item
     }
+
+    private fun createInstantBuyButton(productId: String): ItemStack {
+        val item = ItemStack(Material.GOLDEN_HORSE_ARMOR)
+        item.editMeta { meta ->
+            meta.displayName(Component.text("${ChatColor.YELLOW}즉시 구매"))
+            meta.lore(listOf(
+                Component.text("${ChatColor.DARK_GRAY}$productId"),
+                Component.empty(),
+                Component.text("${ChatColor.GRAY}개당 가격 : ", NamedTextColor.GOLD),
+                Component.text("${ChatColor.GRAY}세트 당 가격 : ", NamedTextColor.GOLD)
+            ))
+            meta.persistentDataContainer.set(NamespacedKey(plugin, "button"),PersistentDataType.STRING, "instant_buy")
+        }
+        return item
+    }
+    private fun createInstantSellButton(productId: String): ItemStack {
+        val item = ItemStack(Material.HOPPER)
+        item.editMeta { meta ->
+            meta.displayName(Component.text("${ChatColor.YELLOW}즉시 판매"))
+            meta.lore(listOf(
+                Component.text("${ChatColor.DARK_GRAY}$productId"),
+                Component.empty(),
+                Component.text("${ChatColor.GRAY}개당 가격 : ", NamedTextColor.GOLD),
+                Component.text("${ChatColor.GRAY}세트 당 가격 : ", NamedTextColor.GOLD)
+            ))
+            meta.persistentDataContainer.set(NamespacedKey(plugin, "button"),PersistentDataType.STRING, "instant_sell")
+        }
+        return item
+    }
+    private fun createBuyOrderButton(productId: String): ItemStack {
+        val item = ItemStack(Material.FILLED_MAP)
+        item.editMeta { meta ->
+            meta.displayName(Component.text("${ChatColor.YELLOW}구매 제안"))
+            meta.lore(listOf(
+                Component.text("${ChatColor.DARK_GRAY}$productId"),
+                Component.empty()
+            ))
+            meta.persistentDataContainer.set(NamespacedKey(plugin, "button"),PersistentDataType.STRING, "buy_order")
+        }
+        return item
+    }
+    private fun createSellOrderButton(productId: String): ItemStack {
+        val item = ItemStack(Material.MAP)
+        item.editMeta { meta ->
+            meta.displayName(Component.text("${ChatColor.YELLOW}판매 제안"))
+            meta.lore(listOf(
+                Component.text("${ChatColor.DARK_GRAY}$productId"),
+                Component.empty()
+            ))
+            meta.persistentDataContainer.set(NamespacedKey(plugin, "button"),PersistentDataType.STRING, "sell_order")
+        }
+        return item
+    }
     // 카테고리 클릭 처리
     private fun handleCategoryClick(category: String, player: Player) {
 
@@ -581,5 +665,268 @@ class BazaarShopGUI(plugin: JavaPlugin, private val database: MongoDatabase) : B
     }
 
 
+
+    /**
+     * 판매 제안 생성 GUI 열기
+     * 가격과 수량을 입력받기 위한 인터페이스 표시
+     */
+    private fun openSellOfferCreationGUI(player: Player, productId: String) {
+        openPriceAndQuantityInputGUI(player, "판매 제안 생성") { price, quantity ->
+            GlobalScope.launch {
+                val result = bazaarAPI.placeSellOffer(player.uniqueId.toString(), productId, quantity.toInt(), price.toDouble())
+                player.sendMessage(
+                    if (result.success) Component.text("${ChatColor.GREEN}${quantity}개의 ${productId} 판매 제안이 생성되었습니다. (단가: $price)")
+                    else Component.text("${ChatColor.RED}제안 생성 실패: ${result.message}")
+                )
+
+                // GUI 다시 열기
+                Bukkit.getScheduler().runTask(plugin, Runnable {
+                    open(plugin, player)
+                })
+            }
+        }
+    }
+
+    /**
+     * 가격과 수량 입력 GUI 열기 (두 단계 프로세스)
+     */
+    private fun openPriceAndQuantityInputGUI(player: Player, title: String, callback: (String, String) -> Unit) {
+        // 가격 입력용 인벤토리 생성
+        val priceInventory = Bukkit.createInventory(null, 9 * 3, "$title - 가격")
+
+        // 가격 선택 버튼 설정
+        val prices = listOf(1.0, 5.0, 10.0, 50.0, 100.0, 500.0, 1000.0)
+
+        for (i in prices.indices) {
+            val price = prices[i]
+            val item = ItemStack(Material.PAPER)
+            val meta = item.itemMeta
+            meta?.displayName(Component.text("${ChatColor.YELLOW}$price${ChatColor.WHITE}원 선택"))
+            meta?.lore(listOf(Component.text("${ChatColor.GRAY}클릭하여 $price 가격 선택")))
+            item.itemMeta = meta
+
+            priceInventory.setItem(10 + i, item)
+        }
+
+        // 커스텀 가격 버튼
+        val customItem = ItemStack(Material.BOOK)
+        val customMeta = customItem.itemMeta
+        customMeta?.displayName(Component.text("${ChatColor.AQUA}사용자 지정 가격"))
+        customMeta?.lore(listOf(Component.text("${ChatColor.GRAY}채팅으로 원하는 가격을 입력하세요")))
+        customItem.itemMeta = customMeta
+        priceInventory.setItem(16, customItem)
+
+        // 취소 버튼
+        val cancelItem = ItemStack(Material.BARRIER)
+        val cancelMeta = cancelItem.itemMeta
+        cancelMeta?.displayName(Component.text("${ChatColor.RED}취소"))
+        cancelMeta?.lore(listOf(Component.text("${ChatColor.GRAY}이전 메뉴로 돌아갑니다")))
+        cancelItem.itemMeta = cancelMeta
+        priceInventory.setItem(22, cancelItem)
+
+        // 가격 선택 이벤트 핸들러
+        val priceListener = object : Listener {
+            @EventHandler
+            fun onInventoryClick(event: InventoryClickEvent) {
+                if (event.inventory != priceInventory) return
+                if (event.whoClicked.uniqueId != player.uniqueId) return
+
+                event.isCancelled = true
+
+                if (event.currentItem == null) return
+
+                when (event.slot) {
+                    22 -> { // 취소 버튼
+                        event.whoClicked.closeInventory()
+                        HandlerList.unregisterAll(this)
+                        open(plugin, player as Player) // 원래 바자 상점 GUI로 돌아감
+                    }
+                    16 -> { // 사용자 지정 가격
+                        event.whoClicked.closeInventory()
+                        HandlerList.unregisterAll(this)
+
+                        player.sendMessage(Component.text("${ChatColor.GREEN}채팅으로 가격을 입력하세요. 취소하려면 '취소'를 입력하세요."))
+
+                        // 채팅 입력 리스너
+                        val chatListener = object : Listener {
+                            @EventHandler
+                            fun onPlayerChat(chatEvent: AsyncPlayerChatEvent) {
+                                if (chatEvent.player.uniqueId != player.uniqueId) return
+
+                                chatEvent.isCancelled = true
+
+                                if (chatEvent.message.lowercase() == "취소") {
+                                    HandlerList.unregisterAll(this)
+                                    open(plugin, player)
+                                    return
+                                }
+
+                                try {
+                                    val price = chatEvent.message.toDouble()
+                                    if (price <= 0) {
+                                        player.sendMessage(Component.text("${ChatColor.RED}0보다 큰 가격을 입력해야 합니다. 다시 시도하세요."))
+                                        return
+                                    }
+
+                                    HandlerList.unregisterAll(this)
+                                    openQuantityInputGUI(player, "$title - 수량") { quantity ->
+                                        callback(price.toString(), quantity)
+                                    }
+                                } catch (e: NumberFormatException) {
+                                    player.sendMessage(Component.text("${ChatColor.RED}유효한 숫자를 입력해야 합니다. 다시 시도하세요."))
+                                }
+                            }
+                        }
+
+                        Bukkit.getPluginManager().registerEvents(chatListener, plugin)
+                    }
+                    else -> {
+                        // 미리 정의된 가격 버튼 확인
+                        for (i in prices.indices) {
+                            if (event.slot == 10 + i) {
+                                event.whoClicked.closeInventory()
+                                HandlerList.unregisterAll(this)
+                                openQuantityInputGUI(player, "$title - 수량") { quantity ->
+                                    callback(prices[i].toString(), quantity)
+                                }
+                                return
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 인벤토리 닫기 이벤트 핸들러 (ESC로 닫을 때도 리스너 해제)
+            @EventHandler
+            fun onInventoryClose(event: InventoryCloseEvent) {
+                if (event.inventory == priceInventory && event.player.uniqueId == player.uniqueId) {
+                    HandlerList.unregisterAll(this)
+                }
+            }
+        }
+
+        Bukkit.getPluginManager().registerEvents(priceListener, plugin)
+        player.openInventory(priceInventory)
+    }
+
+    /**
+     * 수량 입력 GUI 열기
+     */
+    private fun openQuantityInputGUI(player: Player, title: String, callback: (String) -> Unit) {
+        // 수량 선택용 인벤토리 생성
+        val quantityInventory = Bukkit.createInventory(null, 9 * 3, title)
+
+        // 수량 선택 버튼 설정
+        val quantities = listOf(1, 5, 10, 32, 64, 128, 256)
+
+        for (i in quantities.indices) {
+            val quantity = quantities[i]
+            val item = ItemStack(Material.PAPER)
+            val meta = item.itemMeta
+            meta?.displayName(Component.text("${ChatColor.YELLOW}$quantity${ChatColor.WHITE}개 선택"))
+            meta?.lore(listOf(Component.text("${ChatColor.GRAY}클릭하여 $quantity 수량 선택")))
+            item.itemMeta = meta
+
+            quantityInventory.setItem(10 + i, item)
+        }
+
+        // 커스텀 수량 버튼
+        val customItem = ItemStack(Material.BOOK)
+        val customMeta = customItem.itemMeta
+        customMeta?.displayName(Component.text("${ChatColor.AQUA}사용자 지정 수량"))
+        customMeta?.lore(listOf(Component.text("${ChatColor.GRAY}채팅으로 원하는 수량을 입력하세요")))
+        customItem.itemMeta = customMeta
+        quantityInventory.setItem(16, customItem)
+
+        // 취소 버튼
+        val cancelItem = ItemStack(Material.BARRIER)
+        val cancelMeta = cancelItem.itemMeta
+        cancelMeta?.displayName(Component.text("${ChatColor.RED}취소"))
+        cancelMeta?.lore(listOf(Component.text("${ChatColor.GRAY}이전 메뉴로 돌아갑니다")))
+        cancelItem.itemMeta = cancelMeta
+        quantityInventory.setItem(22, cancelItem)
+
+        // 수량 선택 이벤트 핸들러
+        val quantityListener = object : Listener {
+            @EventHandler
+            fun onInventoryClick(event: InventoryClickEvent) {
+                if (event.inventory != quantityInventory) return
+                if (event.whoClicked.uniqueId != player.uniqueId) return
+
+                event.isCancelled = true
+
+                if (event.currentItem == null) return
+
+                when (event.slot) {
+                    22 -> { // 취소 버튼
+                        event.whoClicked.closeInventory()
+                        HandlerList.unregisterAll(this)
+                        open(plugin, player as Player) // 원래 바자 상점 GUI로 돌아감
+                    }
+                    16 -> { // 사용자 지정 수량
+                        event.whoClicked.closeInventory()
+                        HandlerList.unregisterAll(this)
+
+                        player.sendMessage(Component.text("${ChatColor.GREEN}채팅으로 수량을 입력하세요. 취소하려면 '취소'를 입력하세요."))
+
+                        // 채팅 입력 리스너
+                        val chatListener = object : Listener {
+                            @EventHandler
+                            fun onPlayerChat(chatEvent: AsyncPlayerChatEvent) {
+                                if (chatEvent.player.uniqueId != player.uniqueId) return
+
+                                chatEvent.isCancelled = true
+
+                                if (chatEvent.message.lowercase() == "취소") {
+                                    HandlerList.unregisterAll(this)
+                                    open(plugin, player)
+                                    return
+                                }
+
+                                try {
+                                    val quantity = chatEvent.message.toInt()
+                                    if (quantity <= 0) {
+                                        player.sendMessage(Component.text("${ChatColor.RED}0보다 큰 수량을 입력해야 합니다. 다시 시도하세요."))
+                                        return
+                                    }
+
+                                    HandlerList.unregisterAll(this)
+                                    Bukkit.getScheduler().runTask(plugin, Runnable {
+                                        callback(quantity.toString())
+                                    })
+                                } catch (e: NumberFormatException) {
+                                    player.sendMessage(Component.text("${ChatColor.RED}유효한 숫자를 입력해야 합니다. 다시 시도하세요."))
+                                }
+                            }
+                        }
+
+                        Bukkit.getPluginManager().registerEvents(chatListener, plugin)
+                    }
+                    else -> {
+                        // 미리 정의된 수량 버튼 확인
+                        for (i in quantities.indices) {
+                            if (event.slot == 10 + i) {
+                                event.whoClicked.closeInventory()
+                                HandlerList.unregisterAll(this)
+                                callback(quantities[i].toString())
+                                return
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 인벤토리 닫기 이벤트 핸들러 (ESC로 닫을 때도 리스너 해제)
+            @EventHandler
+            fun onInventoryClose(event: InventoryCloseEvent) {
+                if (event.inventory == quantityInventory && event.player.uniqueId == player.uniqueId) {
+                    HandlerList.unregisterAll(this)
+                }
+            }
+        }
+
+        Bukkit.getPluginManager().registerEvents(quantityListener, plugin)
+        player.openInventory(quantityInventory)
+    }
 
 }
