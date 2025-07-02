@@ -13,6 +13,7 @@ import org.bukkit.Bukkit
 import org.bukkit.NamespacedKey
 import org.bukkit.configuration.ConfigurationSection
 import org.bukkit.entity.Player
+import org.bukkit.inventory.ItemStack
 import org.bukkit.persistence.PersistentDataType
 import org.litote.kmongo.coroutine.CoroutineClient
 import org.litote.kmongo.coroutine.CoroutineDatabase
@@ -29,10 +30,6 @@ import prd.peurandel.prdcore.Gui.buildings.armoryGUI
 import prd.peurandel.prdcore.Gui.shop.BazaarShopGUI
 import prd.peurandel.prdcore.Gui.shop.shopgui
 import prd.peurandel.prdcore.Handler.PlayerHandler
-import prd.peurandel.prdcore.Manager.BazaarAPI
-import prd.peurandel.prdcore.Manager.DatabaseManager
-import prd.peurandel.prdcore.Manager.EconomyService
-import prd.peurandel.prdcore.Manager.InventoryService
 import prd.peurandel.prdcore.Manager.*
 import java.util.*
 import java.util.logging.Logger
@@ -129,6 +126,8 @@ class Main : JavaPlugin() {
             
             // 2. 기존 DB 연결 (이전 코드와 호환성 유지)
             val log_database = mongoDBManager.connectToDataBase("logs")
+            val server_database = mongoDBManager.connectToDataBase("server")
+            val playerCollection = server_database.getCollection("users")
             
             // 3. KMongo 기반 Coroutine Database 객체 생성 (트랜잭션 지원)
             bazaarCoroutineDB = coroutineClient.getDatabase("bazaar")
@@ -140,21 +139,111 @@ class Main : JavaPlugin() {
             // --- Repository 구현체 생성 ---
             val categoryRepo = MongoCategoryRepositoryImpl(bazaarCoroutineDB)
             val productRepo = MongoProductRepositoryImpl(bazaarCoroutineDB,logger,pluginScope)
+            val productGroupRepo = MongoProductGroupRepositoryImpl(bazaarCoroutineDB, logger)
             val orderRepo = MongoOrderRepositoryImpl(bazaarCoroutineDB)
             val transactionRepo = MongoTransactionRepositoryImpl(bazaarCoroutineDB, logger)
             
-            // 임시 구현체 생성 (플러그인 완성시 실제 구현체로 대체)
-            // 간소화된 임시 서비스 구현
-            val economyService = object : EconomyService {
-                override suspend fun hasEnoughFunds(playerUUID: UUID, amount: Double): Boolean = true
-                override suspend fun withdraw(playerUUID: UUID, amount: Double): Boolean = true  
-                override suspend fun deposit(playerUUID: UUID, amount: Double): Boolean = true
-            }
-            
+            // 실제 경제 서비스 구현체 생성
+            val economyService = EconomyManager(playerCollection, logger)
+
             val inventoryService = object : InventoryService {
-                override suspend fun hasItems(playerUUID: UUID, itemId: String, quantity: Int): Boolean = true
-                override suspend fun removeItems(playerUUID: UUID, itemId: String, quantity: Int): Boolean = true
-                override suspend fun addItems(playerUUID: UUID, itemId: String, quantity: Int): Boolean = true
+                override suspend fun hasItems(playerUUID: String, itemId: String, quantity: Int): Boolean {
+                    val player = Bukkit.getPlayer(java.util.UUID.fromString(playerUUID))
+                    if (player == null) {
+                        Bukkit.getLogger().warning("플레이어를 찾을 수 없습니다: $playerUUID")
+                        return false
+                    }
+                    
+                    try {
+                        val material = org.bukkit.Material.valueOf(itemId.uppercase())
+                        var totalAmount = 0
+                        
+                        // 플레이어 인벤토리에서 해당 아이템 개수 계산
+                        for (item in player.inventory.contents) {
+                            if (item != null && item.type == material) {
+                                totalAmount += item.amount
+                            }
+                        }
+                        
+                        val hasEnough = totalAmount >= quantity
+                        Bukkit.getLogger().info("아이템 소유 확인: $playerUUID, $itemId, 요청: $quantity, 보유: $totalAmount, 결과: $hasEnough")
+                        return hasEnough
+                    } catch (e: IllegalArgumentException) {
+                        Bukkit.getLogger().warning("유효하지 않은 아이템 ID: $itemId")
+                        return false
+                    }
+                }
+                
+                override suspend fun removeItems(playerUUID: String, itemId: String, quantity: Int): Boolean {
+                    val player = Bukkit.getPlayer(java.util.UUID.fromString(playerUUID))
+                    if (player == null) {
+                        Bukkit.getLogger().warning("플레이어를 찾을 수 없습니다: $playerUUID")
+                        return false
+                    }
+                    
+                    try {
+                        val material = org.bukkit.Material.valueOf(itemId.uppercase())
+                        var remainingToRemove = quantity
+                        
+                        // 인벤토리에서 해당 아이템을 찾아서 제거
+                        for (i in 0 until player.inventory.size) {
+                            val item = player.inventory.getItem(i)
+                            if (item != null && item.type == material) {
+                                if (item.amount >= remainingToRemove) {
+                                    // 이 스택에서 모든 필요한 아이템을 제거할 수 있음
+                                    item.amount -= remainingToRemove
+                                    if (item.amount == 0) {
+                                        player.inventory.setItem(i, null)
+                                    }
+                                    remainingToRemove = 0
+                                    break
+                                } else {
+                                    // 이 스택의 모든 아이템을 제거하고 계속
+                                    remainingToRemove -= item.amount
+                                    player.inventory.setItem(i, null)
+                                }
+                            }
+                        }
+                        
+                        val success = remainingToRemove == 0
+                        Bukkit.getLogger().info("아이템 제거: $playerUUID, $itemId, 요청: $quantity, 제거 완료: ${quantity - remainingToRemove}, 결과: $success")
+                        return success
+                    } catch (e: IllegalArgumentException) {
+                        Bukkit.getLogger().warning("유효하지 않은 아이템 ID: $itemId")
+                        return false
+                    }
+                }
+                
+                override suspend fun addItems(playerUUID: String, itemId: String, quantity: Int): Boolean {
+                    val player = Bukkit.getPlayer(java.util.UUID.fromString(playerUUID))
+                    if (player == null) {
+                        Bukkit.getLogger().warning("플레이어를 찾을 수 없습니다: $playerUUID")
+                        return false
+                    }
+                    
+                    try {
+                        val material = org.bukkit.Material.valueOf(itemId.uppercase())
+                        val itemStack = ItemStack(material, quantity)
+                        
+                        // 인벤토리에 아이템 추가
+                        val remainingItems = player.inventory.addItem(itemStack)
+                        val success = remainingItems.isEmpty()
+                        
+                        if (!success) {
+                            Bukkit.getLogger().warning("인벤토리 공간 부족으로 일부 아이템 추가 실패: $playerUUID, $itemId, 요청: $quantity")
+                            // 추가되지 못한 아이템은 땅에 드롭
+                            for (leftoverItem in remainingItems.values) {
+                                player.world.dropItemNaturally(player.location, leftoverItem)
+                            }
+                        }
+                        
+                        Bukkit.getLogger().info("아이템 추가: $playerUUID, $itemId, 수량: $quantity, 결과: $success")
+                        return true // 드롭으로라도 모든 아이템이 처리되었으므로 true 반환
+                    } catch (e: IllegalArgumentException) {
+                        Bukkit.getLogger().warning("유효하지 않은 아이템 ID: $itemId")
+                        return false
+                    }
+                }
             }
             
             // BazaarCoreService 임시 구현체 생성
@@ -169,6 +258,7 @@ class Main : JavaPlugin() {
             bazaarAPI = BazaarAPIImpl(
                 categoryRepository = categoryRepo,
                 productRepository = productRepo,
+                productGroupRepository = productGroupRepo,
                 orderRepository = orderRepo,
                 transactionRepository = transactionRepo,
                 economyService = economyService,
@@ -187,7 +277,6 @@ class Main : JavaPlugin() {
 
         logger.info("플러그인이 활성화되었습니다.")
 
-        //Keep the comments in front the code when the Docs are already created
         //createDocsForTest(database)
 
         // 이벤트 리스너 등록
@@ -306,7 +395,6 @@ class Main : JavaPlugin() {
         handler.registerGUI(shopgui(this,database,"build"))
         handler.registerGUI(shopgui(this,database,"bazaar"))
         handler.registerGUI(armoryGUI(this,database))
-        handler.registerGUI(BazaarShopGUI(this,getBazaarAPI(),database))
     }
 
     private fun setPlayerSet(database: MongoDatabase) {
@@ -366,108 +454,330 @@ class Main : JavaPlugin() {
     }
 
     fun createDocsForTest(database: MongoDatabase) {
-
-        val serverCollection = database.getCollection("server")
-        val Engine = ResearchEngine(
-            name = "Engine",
-            engine = mutableListOf(
-                Engine(
-                    name = "Basic Furnace",
-                    type = "basic_furnace",
-                    lore = listOf(
-                        "원시의 기운이 느껴집니다."
-                    ),
-                    tier = 1,
-                    energy = 1000,
-                    requireEx = 0,
-                    item = "asdf",
-                    requireResearch = null
+        // 바자 테스트 데이터 생성
+        try {
+            val bazaarDatabase = mongoDBManager.connectToDataBase("bazaar")
+            
+            // 1. 카테고리 테스트 데이터 생성 (categories 컬렉션)
+            val categoryCollection = bazaarDatabase.getCollection("categories")
+            
+            // 기존 카테고리 데이터가 있는지 확인
+            val existingCategoryCount = categoryCollection.countDocuments()
+            if (existingCategoryCount == 0L) {
+                val categories = listOf(
+                    Document().apply {
+                        put("_id", "FARMING")
+                        put("name", "농사")
+                        put("description", "농업 관련 아이템")
+                        put("displayOrder", 1)
+                        put("parentCategoryId", null)
+                    },
+                    Document().apply {
+                        put("_id", "MINING")
+                        put("name", "광업")
+                        put("description", "채굴 관련 아이템")
+                        put("displayOrder", 2)
+                        put("parentCategoryId", null)
+                    },
+                    Document().apply {
+                        put("_id", "COMBAT")
+                        put("name", "전투")
+                        put("description", "전투 관련 아이템")
+                        put("displayOrder", 3)
+                        put("parentCategoryId", null)
+                    },
+                    Document().apply {
+                        put("_id", "WOOD_FISH")
+                        put("name", "목재 & 낚시")
+                        put("description", "목재 및 낚시 관련 아이템")
+                        put("displayOrder", 4)
+                        put("parentCategoryId", null)
+                    },
+                    Document().apply {
+                        put("_id", "ODDITIES")
+                        put("name", "특수 아이템")
+                        put("description", "특별한 아이템들")
+                        put("displayOrder", 5)
+                        put("parentCategoryId", null)
+                    }
                 )
+                
+                categories.forEach { categoryCollection.insertOne(it) }
+                logger.info("Category 테스트 데이터 ${categories.size}개 생성 완료")
+            } else {
+                logger.info("Category 데이터가 이미 존재합니다 (${existingCategoryCount}개)")
+            }
+            
+            // 2. ProductGroup 테스트 데이터 생성
+            val productGroupCollection = bazaarDatabase.getCollection("productGroups")
+            
+            // 기존 ProductGroup 데이터가 있는지 확인
+            val existingProductGroupCount = productGroupCollection.countDocuments()
+            logger.info("기존 ProductGroup 데이터 개수: $existingProductGroupCount")
+            
+            // 잘못된 categoryId를 가진 기존 데이터를 삭제하고 새로 생성
+            if (existingProductGroupCount > 0L) {
+                logger.info("기존 ProductGroup 데이터를 삭제합니다...")
+                productGroupCollection.deleteMany(Document())
+                logger.info("기존 ProductGroup 데이터 삭제 완료")
+            }
+            
+            // 카테고리별 ProductGroup 생성
+            val productGroups = listOf(
+                Document().apply {
+                    put("_id", "WHEAT_GROUP")
+                    put("name", "밀")
+                    put("categoryId", "FARMING")
+                    put("material", "WHEAT")
+                    put("description", "밀 관련 아이템")
+                    put("displayOrder", 1)
+                },
+                Document().apply {
+                    put("_id", "IRON_GROUP")
+                    put("name", "철 무기")
+                    put("categoryId", "COMBAT")
+                    put("material", "IRON_SWORD")
+                    put("description", "철로 만든 무기류")
+                    put("displayOrder", 1)
+                },
+                Document().apply {
+                    put("_id", "WOOD_GROUP")
+                    put("name", "나무")
+                    put("categoryId", "WOOD_FISH")
+                    put("material", "OAK_LOG")
+                    put("description", "각종 나무 아이템")
+                    put("displayOrder", 1)
+                },
+                Document().apply {
+                    put("_id", "FISH_GROUP")
+                    put("name", "생선")
+                    put("categoryId", "WOOD_FISH")
+                    put("material", "COD")
+                    put("description", "각종 생선류")
+                    put("displayOrder", 2)
+                },
+                Document().apply {
+                    put("_id", "EMERALD_GROUP")
+                    put("name", "에메랄드")
+                    put("categoryId", "ODDITIES")
+                    put("material", "EMERALD")
+                    put("description", "특이한 녹색 보석")
+                    put("displayOrder", 1)
+                },
+                Document().apply {
+                    put("_id", "DIAMOND_GROUP")
+                    put("name", "다이아몬드")
+                    put("categoryId", "MINING")
+                    put("material", "DIAMOND")
+                    put("description", "다이아몬드 관련 아이템")
+                    put("displayOrder", 1)
+                }
             )
-        )
-        val Armor = ResearchArmor(
-            name = "ArmorType",
-            armor = mutableListOf(
-                ArmorType(
-                    name = "주조장갑",
-                    type = "cast_armor",
-                    lore = listOf(
-                        "기본적인 장갑입니다.",
-                        "값싸고 든든합니다.",
-                    ),
-                    armor = 0,
-                    weight = 0,
-                    duration = -10,
-                    cost = -20,
-                    item = "asdf",
-                    requireEx = 0
+            
+            productGroups.forEach { productGroupCollection.insertOne(it) }
+            logger.info("ProductGroup 테스트 데이터 ${productGroups.size}개 생성 완료")
+            
+            // 3. Product 테스트 데이터 생성
+            val productCollection = bazaarDatabase.getCollection("products")
+            
+            // 기존 상품 데이터가 있는지 확인
+            val existingProductCount = productCollection.countDocuments()
+            if (existingProductCount == 0L) {
+                val products = listOf(
+                    Document().apply {
+                        put("_id", "DIAMOND")
+                        put("name", "다이아몬드")
+                        put("description", "희귀한 보석")
+                        put("category", "MINING")
+                        put("productGroupId", "DIAMOND_GROUP")
+                        put("material", "DIAMOND")
+                        put("basePrice", 100.0)
+                        put("isTradable", true)
+                    },
+                    Document().apply {
+                        put("_id", "DIAMOND_BLOCK")
+                        put("name", "다이아몬드 블록")
+                        put("description", "다이아몬드로 만든 블록")
+                        put("category", "MINING")
+                        put("productGroupId", "DIAMOND_GROUP")
+                        put("material", "DIAMOND_BLOCK")
+                        put("basePrice", 900.0)
+                        put("isTradable", true)
+                    },
+                    Document().apply {
+                        put("_id", "WHEAT")
+                        put("name", "밀")
+                        put("description", "기본적인 농작물")
+                        put("category", "FARMING")
+                        put("productGroupId", "WHEAT_GROUP")
+                        put("material", "WHEAT")
+                        put("basePrice", 2.0)
+                        put("isTradable", true)
+                    },
+                    Document().apply {
+                        put("_id", "IRON_SWORD")
+                        put("name", "철 검")
+                        put("description", "기본적인 철 검")
+                        put("category", "COMBAT")
+                        put("productGroupId", "IRON_GROUP")
+                        put("material", "IRON_SWORD")
+                        put("basePrice", 25.0)
+                        put("isTradable", true)
+                    },
+                    Document().apply {
+                        put("_id", "OAK_LOG")
+                        put("name", "참나무 원목")
+                        put("description", "기본적인 나무")
+                        put("category", "WOOD_FISH")
+                        put("productGroupId", "WOOD_GROUP")
+                        put("material", "OAK_LOG")
+                        put("basePrice", 1.0)
+                        put("isTradable", true)
+                    },
+                    Document().apply {
+                        put("_id", "COD")
+                        put("name", "대구")
+                        put("description", "신선한 대구")
+                        put("category", "WOOD_FISH")
+                        put("productGroupId", "FISH_GROUP")
+                        put("material", "COD")
+                        put("basePrice", 5.0)
+                        put("isTradable", true)
+                    },
+                    Document().apply {
+                        put("_id", "EMERALD")
+                        put("name", "에메랄드")
+                        put("description", "특이한 녹색 보석")
+                        put("category", "ODDITIES")
+                        put("productGroupId", "EMERALD_GROUP")
+                        put("material", "EMERALD")
+                        put("basePrice", 50.0)
+                        put("isTradable", true)
+                    }
                 )
-            )
-        )
-        val Material = ResearchMaterial(
-            name = "Material",
-            material = mutableListOf(
-                Material(
-                    name = "강철",
-                    type = "steel",
-                    lore = listOf(
-                        "기본적인 장갑 재질입니다."
-                    ),
-                    weight = 4.87,
-                    armor = 15,
-                    cost = 3,
-                    duration = 840,
-                    item = "asdf",
-                    requireEx = 0
+                
+                products.forEach { productCollection.insertOne(it) }
+                logger.info("Product 테스트 데이터 ${products.size}개 생성 완료")
+            } else {
+                logger.info("Product 데이터가 이미 존재합니다 (${existingProductCount}개)")
+            }
+            
+            // 4. 서버 연구 데이터 생성
+            val serverCollection = database.getCollection("server")
+            
+            // 기존 서버 데이터가 있는지 확인
+            val existingServerCount = serverCollection.countDocuments()
+            if (existingServerCount == 0L) {
+                val Engine = ResearchEngine(
+                    name = "Engine",
+                    engine = mutableListOf(
+                        Engine(
+                            name = "Basic Furnace",
+                            type = "basic_furnace",
+                            lore = listOf(
+                                "원시의 기운이 느껴집니다."
+                            ),
+                            tier = 1,
+                            energy = 1000,
+                            requireEx = 0,
+                            item = "asdf",
+                            requireResearch = null
+                        )
+                    )
                 )
-            )
-        )
-
-        val Magic = ResearchMagic(
-            name = "Magic",
-            magics = mutableListOf(
-                Magics(
-                    name = "보호막",
-                    type = "shield",
-                    lore = listOf(
-                        "장갑을 보호하는 보호막입니다."
-                    ),
-                    item = "asdf",
-                    requireEx = 0
+                val Armor = ResearchArmor(
+                    name = "ArmorType",
+                    armor = mutableListOf(
+                        ArmorType(
+                            name = "주조장갑",
+                            type = "cast_armor",
+                            lore = listOf(
+                                "기본적인 장갑입니다.",
+                                "값싸고 든든합니다.",
+                            ),
+                            armor = 0,
+                            weight = 0,
+                            duration = -10,
+                            cost = -20,
+                            item = "asdf",
+                            requireEx = 0
+                        )
+                    )
                 )
-            )
-        )
-
-        val Skills = ResearchSkills(
-            name = "Skill",
-            skills = mutableListOf(
-                Skills(
-                    name = "테스트",
-                    type = "steel",
-                    lore = listOf(
-                        "일단 존나 테스트"
-                    ),
-                    item = "asdf",
-                    requireEx = 0
+                val Material = ResearchMaterial(
+                    name = "Material",
+                    material = mutableListOf(
+                        Material(
+                            name = "강철",
+                            type = "steel",
+                            lore = listOf(
+                                "기본적인 장갑 재질입니다."
+                            ),
+                            weight = 4.87,
+                            armor = 15,
+                            cost = 3,
+                            duration = 840,
+                            item = "asdf",
+                            requireEx = 0
+                        )
+                    )
                 )
-            )
-        )
 
-        val EngineDoc = Document.parse(Json.encodeToString(Engine))
-        val ArmorDoc = Document.parse(Json.encodeToString(Armor))
-        val MaterialDoc = Document.parse(Json.encodeToString(Material))
-        val MagicDoc = Document.parse(Json.encodeToString(Magic))
-        val SkillDoc = Document.parse(Json.encodeToString(Skills))
+                val Magic = ResearchMagic(
+                    name = "Magic",
+                    magics = mutableListOf(
+                        Magics(
+                            name = "보호막",
+                            type = "shield",
+                            lore = listOf(
+                                "장갑을 보호하는 보호막입니다."
+                            ),
+                            item = "asdf",
+                            requireEx = 0
+                        )
+                    )
+                )
 
-        val simpleDoc = Document.parse("""{"test": "document"}""")
-        val result = serverCollection.insertOne(simpleDoc)
+                val Skills = ResearchSkills(
+                    name = "Skill",
+                    skills = mutableListOf(
+                        Skills(
+                            name = "테스트",
+                            type = "steel",
+                            lore = listOf(
+                                "일단 존나 테스트"
+                            ),
+                            item = "asdf",
+                            requireEx = 0
+                        )
+                    )
+                )
 
-        logger.info("Inserted document ID: ${result.insertedId}")
-        serverCollection.insertOne(EngineDoc)
-        serverCollection.insertOne(ArmorDoc)
-        serverCollection.insertOne(MaterialDoc)
-        serverCollection.insertOne(MagicDoc)
-        serverCollection.insertOne(SkillDoc)
+                val EngineDoc = Document.parse(Json.encodeToString(Engine))
+                val ArmorDoc = Document.parse(Json.encodeToString(Armor))
+                val MaterialDoc = Document.parse(Json.encodeToString(Material))
+                val MagicDoc = Document.parse(Json.encodeToString(Magic))
+                val SkillDoc = Document.parse(Json.encodeToString(Skills))
+
+                val simpleDoc = Document.parse("""{"test": "document"}""")
+                val result = serverCollection.insertOne(simpleDoc)
+
+                logger.info("Inserted document ID: ${result.insertedId}")
+                serverCollection.insertOne(EngineDoc)
+                serverCollection.insertOne(ArmorDoc)
+                serverCollection.insertOne(MaterialDoc)
+                serverCollection.insertOne(MagicDoc)
+                serverCollection.insertOne(SkillDoc)
+                
+                logger.info("서버 연구 데이터 생성 완료")
+            } else {
+                logger.info("서버 데이터가 이미 존재합니다 (${existingServerCount}개)")
+            }
+            
+        } catch (e: Exception) {
+            logger.warning("바자 테스트 데이터 생성 중 오류: ${e.message}")
+        }
+
     }
 
 }

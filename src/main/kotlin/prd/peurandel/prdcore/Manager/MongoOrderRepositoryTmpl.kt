@@ -8,6 +8,8 @@ import com.mongodb.reactivestreams.client.ClientSession // 또는 다른 드라�
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import java.util.UUID
+import org.bson.Document
+import java.time.Instant
 
 // --- OrderRepository 인터페이스 구현 ---
 class MongoOrderRepositoryImpl(
@@ -28,7 +30,29 @@ class MongoOrderRepositoryImpl(
         val sort = Sorts.orderBy(Sorts.descending(BuyOrder::pricePerUnit.name), Sorts.ascending(BuyOrder::timestampPlaced.name))
 
         // 세션 없이 컬렉션 직접 사용
-        return buyOrderCollection.find(filter).sort(sort).limit(limit).toList()
+        return try {
+            val documents = database.getCollection<Document>("buy_orders").find(filter).sort(sort).limit(limit).toList()
+            documents.mapNotNull { doc ->
+                try {
+                    BuyOrder(
+                        id = doc.getString("id") ?: doc.getString("_id") ?: "",
+                        playerUUID = doc.getString("playerUUID") ?: "",
+                        itemId = doc.getString("itemId") ?: "",
+                        quantityOrdered = doc.getInteger("quantityOrdered") ?: 0,
+                        quantityFilled = doc.getInteger("quantityFilled") ?: 0,
+                        pricePerUnit = doc.getDouble("pricePerUnit") ?: 0.0,
+                        timestampPlaced = doc.getDate("timestampPlaced")?.toInstant() ?: Instant.now(),
+                        status = OrderStatus.valueOf(doc.getString("status") ?: "ACTIVE")
+                    )
+                } catch (e: Exception) {
+                    println("Error converting Document to BuyOrder: ${e.message}")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            println("Error finding active buy orders: ${e.message}")
+            emptyList()
+        }
     }
 
     // session 파라미터 제거
@@ -42,19 +66,87 @@ class MongoOrderRepositoryImpl(
         val sort = Sorts.orderBy(Sorts.ascending(SellOffer::pricePerUnit.name), Sorts.ascending(SellOffer::timestampPlaced.name))
 
         // session 관련 분기 제거, 직접 컬렉션 사용
-        return sellOfferCollection.find(filter).sort(sort).limit(limit).toList()
+        return try {
+            val documents = database.getCollection<Document>("sell_offers").find(filter).sort(sort).limit(limit).toList()
+            documents.mapNotNull { doc ->
+                try {
+                    SellOffer(
+                        id = doc.getString("id") ?: doc.getString("_id") ?: "",
+                        playerUUID = doc.getString("playerUUID") ?: "",
+                        itemId = doc.getString("itemId") ?: "",
+                        quantityOffered = doc.getInteger("quantityOffered") ?: 0,
+                        quantitySold = doc.getInteger("quantitySold") ?: 0,
+                        pricePerUnit = doc.getDouble("pricePerUnit") ?: 0.0,
+                        timestampPlaced = doc.getDate("timestampPlaced")?.toInstant() ?: Instant.now(),
+                        status = OrderStatus.valueOf(doc.getString("status") ?: "ACTIVE")
+                    )
+                } catch (e: Exception) {
+                    println("Error converting Document to SellOffer: ${e.message}")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            println("Error finding active sell offers: ${e.message}")
+            emptyList()
+        }
     }
 
-    // session 파라미터 제거
     override suspend fun findBuyOrderById(orderId: String): BuyOrder? {
-        // session 관련 분기 제거, 직접 컬렉션 사용
-        return buyOrderCollection.findOneById(orderId)
+        return try {
+            val document = database.getCollection<Document>("buy_orders").findOne(Document("id", orderId))
+            document?.let { doc ->
+                BuyOrder(
+                    id = doc.getString("id") ?: doc.getString("_id") ?: "",
+                    playerUUID = doc.getString("playerUUID") ?: "",
+                    itemId = doc.getString("itemId") ?: "",
+                    quantityOrdered = doc.getInteger("quantityOrdered") ?: 0,
+                    quantityFilled = doc.getInteger("quantityFilled") ?: 0,
+                    pricePerUnit = doc.getDouble("pricePerUnit") ?: 0.0,
+                    timestampPlaced = doc.getDate("timestampPlaced")?.toInstant() ?: Instant.now(),
+                    status = OrderStatus.valueOf(doc.getString("status") ?: "ACTIVE")
+                )
+            }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     // session 파라미터 제거
     override suspend fun findSellOfferById(orderId: String): SellOffer? {
-        // session 관련 분기 제거, 직접 컬렉션 사용
-        return sellOfferCollection.findOneById(orderId)
+        return try {
+            val document = database.getCollection<Document>("sell_offers").findOne(Document("id", orderId))
+            if (document == null) {
+                val altDocument = database.getCollection<Document>("sell_offers").findOne(Document("_id", orderId))
+                altDocument?.let { doc ->
+                    SellOffer(
+                        id = doc.getString("id") ?: doc.getString("_id") ?: "",
+                        playerUUID = doc.getString("playerUUID") ?: "",
+                        itemId = doc.getString("itemId") ?: "",
+                        quantityOffered = doc.getInteger("quantityOffered") ?: 0,
+                        quantitySold = doc.getInteger("quantitySold") ?: 0,
+                        pricePerUnit = doc.getDouble("pricePerUnit") ?: 0.0,
+                        timestampPlaced = doc.getDate("timestampPlaced")?.toInstant() ?: Instant.now(),
+                        status = OrderStatus.valueOf(doc.getString("status") ?: "ACTIVE")
+                    )
+                }
+            } else {
+                document.let { doc ->
+                    SellOffer(
+                        id = doc.getString("id") ?: doc.getString("_id") ?: "",
+                        playerUUID = doc.getString("playerUUID") ?: "",
+                        itemId = doc.getString("itemId") ?: "",
+                        quantityOffered = doc.getInteger("quantityOffered") ?: 0,
+                        quantitySold = doc.getInteger("quantitySold") ?: 0,
+                        pricePerUnit = doc.getDouble("pricePerUnit") ?: 0.0,
+                        timestampPlaced = doc.getDate("timestampPlaced")?.toInstant() ?: Instant.now(),
+                        status = OrderStatus.valueOf(doc.getString("status") ?: "ACTIVE")
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
     }
 
     override suspend fun findActiveOrdersByPlayer(playerUUID: String): List<Pair<BuyOrder?, SellOffer?>> {
@@ -103,6 +195,7 @@ class MongoOrderRepositoryImpl(
             combinedList
         } // coroutineScope 종료
     } // findActiveOrdersByPlayer 메소드 종료
+
     // session 파라미터 제거
     override suspend fun saveBuyOrder(order: BuyOrder): Boolean {
         return try {

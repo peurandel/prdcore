@@ -51,6 +51,18 @@ class MongoProductRepositoryImpl(
     }
 
     /**
+     * 특정 상품 그룹에 속한 모든 상품을 조회합니다.
+     */
+    override suspend fun findByProductGroup(productGroupId: String): List<Product> {
+        return try {
+            productCollection.find(Product::productGroupId eq productGroupId).toList()
+        } catch (e: Exception) {
+            logger?.warning("상품 그룹별 상품 조회 중 오류: ${e.message}")
+            emptyList()
+        }
+    }
+
+    /**
      * 상품명 또는 설명에 특정 문자열이 포함된 상품을 검색합니다.
      */
     override suspend fun findByNameQuery(query: String): List<Product> {

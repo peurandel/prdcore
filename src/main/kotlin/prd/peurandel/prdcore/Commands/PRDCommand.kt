@@ -17,7 +17,6 @@ import org.bukkit.inventory.ItemStack
 import org.bukkit.persistence.PersistentDataType
 import org.bukkit.plugin.java.JavaPlugin
 import prd.peurandel.prdcore.Gui.shop.BazaarShopGUI
-import prd.peurandel.prdcore.Gui.shop.bazaargui
 import prd.peurandel.prdcore.Gui.shop.shopgui
 import prd.peurandel.prdcore.Handler.buildingHandler
 import prd.peurandel.prdcore.ItemStack.ItemSerialization
@@ -38,7 +37,7 @@ class PRDCommand(private val plugin: JavaPlugin,database: MongoDatabase,bazaarAP
                 shopgui(plugin,database,"build").open(plugin,player)
             }
             "bazaar" -> {
-                BazaarShopGUI(plugin, bazaarAPI,database).open(plugin,player)
+                BazaarShopGUI(plugin,player, bazaarAPI).open()
             }
             else -> {
                 player.sendMessage("${ChatColor.RED}ERROR. UNKNOWN SHOP")

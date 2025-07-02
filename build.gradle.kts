@@ -34,6 +34,9 @@ dependencies {
     implementation("org.litote.kmongo:kmongo-coroutine-serialization:5.2.0")
     implementation("org.mongodb:bson-kotlin:5.1.4")
     implementation("net.wesjd:anvilgui:1.10.5-SNAPSHOT")
+
+    implementation("dev.triumphteam:triumph-gui:3.1.12")
+
 }
 
 val targetJavaVersion = 21
@@ -49,7 +52,7 @@ tasks.processResources {
     val props = mapOf("version" to version)
     inputs.properties(props)
     filteringCharset = "UTF-8"
-    filesMatching("paper-plugin.yml") {
+    filesMatching("plugin.yml") {
         expand(props)
     }
 }
@@ -57,5 +60,5 @@ tasks.processResources {
 // tasks.jar -> tasks.shadowJar 로 변경
 tasks.shadowJar {
     archiveFileName.set("prdcore.jar") // 최종적으로 plugins 폴더에 생성될 파일 이름
-    destinationDirectory.set(file("D:\\Project\\server\\1.21.4\\plugins")) // plugins 폴더 경로
+    destinationDirectory.set(file("D:\\server\\minecraft_server_data\\plugins")) // plugins 폴더 경로
 }
