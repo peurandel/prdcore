@@ -15,7 +15,6 @@ import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.ItemMeta
 import org.bukkit.persistence.PersistentDataType
 import org.bukkit.plugin.java.JavaPlugin
-import org.litote.kmongo.json
 import prd.peurandel.prdcore.Gui.BaseGUI
 import prd.peurandel.prdcore.ItemStack.Button
 import prd.peurandel.prdcore.ItemStack.ItemSerialization

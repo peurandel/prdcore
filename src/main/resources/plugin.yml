@@ -2,6 +2,7 @@ name: prdcore
 version: '0.1.6'
 main: prd.peurandel.prdcore.Main
 api-version: '1.21'
+depend: [ProtocolLib]
 commands:
   suit:
     description: Opens the Suit GUI or performs other suit-related actions
